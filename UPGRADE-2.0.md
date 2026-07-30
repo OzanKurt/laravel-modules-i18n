@@ -11,9 +11,14 @@ composer require ozankurt/laravel-modules-i18n
 
 See the [README](README.md) for setup, the `viewI18n` gate, and publishing the UI assets.
 
+## Requirements
+
+`v2.0.0` targets **PHP 8.4** and **Laravel 13** (`illuminate/*` `^13.0`), with
+`ozankurt/laravel-modules-core` `^2.0`. Laravel 12 and PHP 8.3 are not supported.
+
 ## REST API migrated onto the Core API kit
 
-The HTTP layer now uses the shared Core API kit (requires `ozankurt/laravel-modules-core` `^2.2`).
+The HTTP layer now uses the shared Core API kit (requires `ozankurt/laravel-modules-core` `^2.0`).
 This is a **breaking change** to how routes are registered and secured — the previous always-on
 `/i18n/api/*` routes have been replaced.
 
@@ -48,7 +53,7 @@ This is a **breaking change** to how routes are registered and secured — the p
 
 **Migration steps**
 
-1. `composer update ozankurt/laravel-modules-core` (to `^2.2`).
+1. `composer update ozankurt/laravel-modules-core` (to `^2.0`).
 2. Set `I18N_HTTP_MODE=api` (or `ui`) wherever you want the surface active.
 3. Ensure requests are authenticated and define/override the `i18n.manageTranslations` gate for
    non-local environments.

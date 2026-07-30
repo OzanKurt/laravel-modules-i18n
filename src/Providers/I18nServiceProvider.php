@@ -28,7 +28,7 @@ final class I18nServiceProvider extends PackageServiceProvider
         return 'i18n';
     }
 
-    protected function moduleManifest(): ?ModuleManifest
+    protected function moduleManifest(): ModuleManifest
     {
         return ModuleManifest::make('i18n')
             ->name('i18n')

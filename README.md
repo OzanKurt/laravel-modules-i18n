@@ -22,8 +22,9 @@ Part of the [KurtModules](https://github.com/ozankurt) family. Requires
 
 ## Requirements
 
-- PHP 8.3+
-- Laravel 12.x (13.x once the test toolchain supports it)
+- PHP 8.4+
+- Laravel 13.x
+- `ozankurt/laravel-modules-core` v2.x
 
 ## Installation
 

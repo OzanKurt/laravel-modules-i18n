@@ -6,7 +6,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Added
 
-- **REST API on the Core API kit**: the JSON API is now built on `ozankurt/laravel-modules-core` `^2.2`. It registers under `config('i18n.http.prefix')` (default `api/i18n`) via `registerModuleApi()`, responses use the `{ data, meta }` envelope, and it is throttled by the `i18n-api` limiter. New resource endpoints round out the surface: `GET /api/i18n/groups` (list all translation groups), `GET /api/i18n/locales` (list locales), and single-key `GET`/`PUT`/`DELETE /api/i18n/translations` over the same safe write path.
+- **REST API on the Core API kit**: the JSON API is now built on `ozankurt/laravel-modules-core` `^2.0`. It registers under `config('i18n.http.prefix')` (default `api/i18n`) via `registerModuleApi()`, responses use the `{ data, meta }` envelope, and it is throttled by the `i18n-api` limiter. New resource endpoints round out the surface: `GET /api/i18n/groups` (list all translation groups), `GET /api/i18n/locales` (list locales), and single-key `GET`/`PUT`/`DELETE /api/i18n/translations` over the same safe write path.
 - **Cross-group missing-key report**: `MissingKeyReport` support class and `GET /api/i18n/report/missing?reference={locale}` endpoint that list, across every JSON and PHP group at once, the reference keys absent from each target locale.
 - **Import / export**: `TranslationExporter` + `TranslationImporter` support classes and `GET /api/i18n/export` / `POST /api/i18n/import` endpoints to move a group (or all groups) for a locale to and from CSV or JSON `key,value` rows. Imports run through the existing safe write path (per-group lock, backups, optimistic-hash conflict) as a batch of `set` ops.
 - **Machine-translation seam**: a `Kurt\Modules\I18n\Contracts\Translator` contract with a `NullTranslator` default (throws until configured), bound via `config('i18n.translator')`, plus a `POST /api/i18n/translate-missing` action that fills a locale's missing keys from a reference through the configured translator and the safe write path. The consumer ships the real DeepL/Google/LLM implementation.
@@ -16,7 +16,8 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Changed
 
 - **Breaking — HTTP surface is now safe-by-default and gated.** The always-on `/i18n/api/*` routes (`web` middleware + `viewI18n` gate) are replaced by the Core API kit. Nothing is registered until `I18N_HTTP_MODE` is set to `api` (JSON API) or `ui` (API + the bundled UI shell); `headless` is the default. Every endpoint — reads and writes alike — now requires authentication (`config('i18n.http.auth_middleware')`) plus the `i18n.manageTranslations` gate, and lives under `api/i18n` instead of `i18n/api`. Response bodies are wrapped in the `{ data, meta }` envelope, and the `409` conflict payload moves the stale locales under `errors.locales`. See [UPGRADE-2.0.md](UPGRADE-2.0.md).
-- Requires `ozankurt/laravel-modules-core` `^2.2` (was `^2.0`).
+- **BREAKING** — requires Laravel 13, PHP 8.4 and `ozankurt/laravel-modules-core` `^2.0`. Laravel 12 and PHP 8.3 are no longer supported. `spatie/laravel-package-tools` moves to `^1.93`, the first release that supports Laravel 13. The test suite moves to Pest 5 / Testbench 11, and CI now runs PHP 8.4 + Laravel 13.
+- `I18nServiceProvider::moduleManifest()` narrows its return type from `?ModuleManifest` to `ModuleManifest`, matching what it actually returns.
 
 ### Fixed
 
