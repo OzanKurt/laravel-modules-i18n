@@ -1,11 +1,13 @@
 # laravel-modules-i18n
 
+[![tests](https://github.com/OzanKurt/laravel-modules-i18n/actions/workflows/tests.yml/badge.svg)](https://github.com/OzanKurt/laravel-modules-i18n/actions/workflows/tests.yml)
+
 A self-hosted **translation-file manager** for Laravel. It ships its own UI (Tailwind 4 + vanilla
 JS — no build step required in your app) for editing both **JSON** and **PHP array** language files
 on disk, including deeply nested PHP keys like `'foo' => ['bar' => 'baz']`.
 
 Part of the [KurtModules](https://github.com/ozankurt) family. Requires
-[`ozankurt/laravel-modules-core`](https://github.com/OzanKurt/KurtModules-Core).
+[`ozankurt/laravel-modules-core`](https://github.com/OzanKurt/laravel-modules-core).
 
 ## Features
 
@@ -22,8 +24,8 @@ Part of the [KurtModules](https://github.com/ozankurt) family. Requires
 
 ## Requirements
 
-- PHP 8.4+
-- Laravel 13.x
+- PHP `^8.4`
+- Laravel `^13.0`
 - `ozankurt/laravel-modules-core` v2.x
 
 ## Installation
@@ -340,21 +342,21 @@ headless (nothing registered) until you set `I18N_HTTP_MODE`, and every endpoint
 authentication plus the `i18n.manageTranslations` gate. Never serve it publicly without a restrictive
 gate override in production (and, for the `ui` shell, the `viewI18n` gate).
 
-## Development
+## Testing
+
+```bash
+composer install
+vendor/bin/pint --test
+vendor/bin/phpstan analyse --memory-limit=2G
+vendor/bin/pest
+```
+
+CI runs the same checks on every push and pull request
+(`.github/workflows/tests.yml`), against PHP 8.4 / Laravel 13. Static analysis
+is held at **PHPStan level 8**; the suite runs on **Pest 5**.
 
 The UI assets are prebuilt and committed under `resources/dist/`. To rebuild after changing
 `resources/css` or `resources/js`:
-
-```bash
-npm install
-npm run build
-```
-
-```bash
-composer test     # pest
-composer lint     # pint --test
-composer stan     # phpstan
-```
 
 ## License
 
