@@ -279,9 +279,13 @@ The four categories answer different questions, so they are never merged into on
   `ambiguous` means the key belongs nowhere we can name, so the entry tells you on its own that the
   key is unplaceable, without cross-referencing the `ambiguous` list by string.
 - **`unused`**: keys the catalogue defines that no scanned call site references. Locale-independent, so
-  a key only `en` has to lose is still "used" for every locale's purposes. It is withheld (an empty
-  list plus a `warnings` entry) whenever the scan cannot vouch for the whole walk: see **When `unused`
-  is withheld** below.
+  a key only `en` has to lose is still "used" for every locale's purposes. Read it as advice, never as
+  a delete list: **only `*.php` files are scanned** (including `*.blade.php`, which is compiled first),
+  so a key your front end calls from `resources/js/**/*.vue` or `*.js` through a translation shim has
+  no PHP call site and is reported unused. The PHP side of such an app still yields plenty of literals,
+  so nothing else in the report warns you about it. It is also withheld entirely (an empty list plus a
+  `warnings` entry) whenever the scan cannot vouch for the whole walk: see **When `unused` is
+  withheld** below.
 - **`dynamic`**: call sites whose first argument was not a plain string literal (a variable, a
   concatenation, an interpolated string), so the key could not be read at all. Nothing is guessed;
   these are left for a human to check by hand.
@@ -355,7 +359,8 @@ The full `scan` config block, with its defaults:
 ],
 ```
 
-- `paths`: the roots walked for call sites. `null` resolves to `[app_path(), resource_path()]`.
+- `paths`: the roots walked for call sites. `null` resolves to `[app_path(), resource_path()]`. Only
+  `*.php` files under those roots are read; every other extension is skipped.
 - `excluded_paths`: roots skipped entirely (symlinks under a scanned root are never followed either,
   regardless of this list). `null` resolves to `[base_path('vendor'), storage_path()]`.
 - `methods`: extra function/method names recognised as translation calls, on top of the built-in
