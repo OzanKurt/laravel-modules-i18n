@@ -117,4 +117,24 @@ return [
 
     'translator' => NullTranslator::class,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Source scanning
+    |--------------------------------------------------------------------------
+    |
+    | Where to look for translation calls, and what to leave out of the
+    | "unused" report. `ignored_groups` and `ignored_keys` suppress unused
+    | keys only; they never hide a key that code uses but no file defines.
+    |
+    */
+    'scan' => [
+        'paths' => null,            // null resolves to [app_path(), resource_path()]
+        'excluded_paths' => null,   // null resolves to [base_path('vendor'), storage_path()]
+        'methods' => ['__', 'trans', 'trans_choice'],
+        'ignored_keys' => [],
+        'ignored_groups' => ['validation', 'passwords', 'auth', 'pagination'],
+        'cache' => true,
+        'cache_path' => null,       // null resolves to storage/framework/cache/i18n-scan.json
+    ],
+
 ];
