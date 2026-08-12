@@ -50,7 +50,8 @@ it('marks a variable or interpolated argument as non-literal', function () {
     $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
     $dynamic = array_values(array_filter($usages, fn (Usage $u): bool => ! $u->isLiteral));
 
-    expect($dynamic)->toHaveCount(2);
+    // The variable, the interpolated string and the concatenation.
+    expect($dynamic)->toHaveCount(3);
 });
 
 it('records the line number of each finding', function () {
@@ -58,6 +59,50 @@ it('records the line number of each finding', function () {
     $real = array_values(array_filter($usages, fn (Usage $u): bool => $u->key === 'real.literal'))[0];
 
     expect($real->line)->toBe(8)->and($real->method)->toBe('__');
+});
+
+it('keeps a single-quoted key with backslashes intact', function () {
+    $keys = keysFrom(scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php'));
+
+    expect($keys)->toContain('single\quoted\backslashes')
+        ->and($keys)->toContain("escaped \\ backslash and ' quote");
+});
+
+it('does not mangle a unicode escape in a double-quoted key', function () {
+    $keys = keysFrom(scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php'));
+
+    expect($keys)->toContain("unicode \u{1F600} escape");
+});
+
+it('ignores get on a receiver that is not the translator', function () {
+    $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
+    $get = array_values(array_filter($usages, fn (Usage $u): bool => $u->method === 'get'));
+
+    expect(array_map(fn (Usage $u): string => $u->key, $get))
+        ->toBe(['lang.get.literal', 'translator.literal', 'facade.get.literal']);
+});
+
+it('ignores choice on a receiver that is not the translator', function () {
+    $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
+    $choice = array_values(array_filter($usages, fn (Usage $u): bool => $u->method === 'choice'));
+
+    expect(array_map(fn (Usage $u): string => $u->key, $choice))
+        ->toBe(['lang.choice.literal', 'translator.choice.literal']);
+});
+
+it('finds a call written with a qualified name', function () {
+    $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
+    $namespaced = array_values(array_filter($usages, fn (Usage $u): bool => $u->key === 'namespaced.key'));
+
+    expect($namespaced)->toHaveCount(1)
+        ->and($namespaced[0]->method)->toBe('trans');
+});
+
+it('treats a concatenated argument as dynamic rather than a truncated literal', function () {
+    $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
+
+    expect(keysFrom($usages))->not->toContain('a')
+        ->and(array_values(array_filter($usages, fn (Usage $u): bool => ! $u->isLiteral)))->toHaveCount(3);
 });
 
 it('recognises an application wrapper added through config', function () {
