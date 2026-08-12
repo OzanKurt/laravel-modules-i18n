@@ -552,18 +552,28 @@ C:/laragon/bin/php/php-8.4.5-nts-Win32-vs17-x64/php.exe vendor/bin/phpstan analy
 
 Expected: all tests pass; Pint `passed`; PHPStan `[OK] No errors`.
 
-- [ ] **Step 6: Check whether compiled line numbers match the source**
+- [ ] **Step 6: Pin whether compiled line numbers match the source**
 
-Run this one-off check and record the result in your report:
+The whole report points developers at a file and a line, so a drifting line
+number is a real defect rather than cosmetic. Add this test to
+`tests/Feature/BladeScanTest.php` and run it:
 
-```bash
-C:/laragon/bin/php/php-8.4.5-nts-Win32-vs17-x64/php.exe -r "
-require 'vendor/autoload.php';
-\$app = require 'vendor/orchestra/testbench-core/laravel/bootstrap/app.php';
-" 2>/dev/null || echo "bootstrap unavailable, use the test instead"
+```php
+it('reports blade findings against their source line', function () {
+    $usages = app(SourceScanner::class)->scanFile(__DIR__.'/../Fixtures/scan-app/page.blade.php');
+    $echo = array_values(array_filter($usages, fn (Usage $u): bool => $u->key === 'blade.echo'))[0];
+
+    // page.blade.php line 2 is the <h1> holding {{ __('blade.echo') }}.
+    expect($echo->line)->toBe(2);
+});
 ```
 
-If a bootstrap is awkward, add a temporary assertion inside the Task 3 feature test asserting `blade.echo` is reported on line 2, run it, and note whether it holds. If the compiled line drifts from the source line, add a `Usage` line-correction step and say so in your report. **Do not leave a drifting line number undocumented**, since the whole report points developers at file and line.
+Add `use Kurt\Modules\I18n\Support\Usage;` to the test file's imports.
+
+If it passes, Blade's compiler preserved the line and nothing more is needed. If
+it fails, do NOT relax the assertion: report the real line it produced, and add
+a correction step that maps the compiled line back to the source before building
+the `Usage`. Say which happened in your report either way.
 
 - [ ] **Step 7: Commit**
 
@@ -1604,6 +1614,7 @@ namespace Kurt\Modules\I18n\Http\Controllers\Api;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Kurt\Modules\I18n\Support\ScanCache;
 use Kurt\Modules\I18n\Support\ScanReport;
 
 /**
@@ -1614,10 +1625,10 @@ use Kurt\Modules\I18n\Support\ScanReport;
  */
 final class ScanReportController extends ApiController
 {
-    public function __invoke(Request $request, ScanReport $report): JsonResponse
+    public function __invoke(Request $request, ScanReport $report, ScanCache $cache): JsonResponse
     {
         if ($request->boolean('refresh')) {
-            $request->attributes->set('i18n.scan.refresh', true);
+            $cache->flush();
         }
 
         return $this->respond($report->generate($this->optionalLocalesFromRequest($request)));
@@ -1639,28 +1650,7 @@ and add this route inside the existing group, after the `catalog` route:
     Route::get('scan', ScanReportController::class)->name('scan');
 ```
 
-- [ ] **Step 5: Handle the refresh flag properly**
-
-The attribute set in Step 3 is not read anywhere, which would be dead code. Replace the controller body with a direct cache flush instead:
-
-```php
-    public function __invoke(Request $request, ScanReport $report, ScanCache $cache): JsonResponse
-    {
-        if ($request->boolean('refresh')) {
-            $cache->flush();
-        }
-
-        return $this->respond($report->generate($this->optionalLocalesFromRequest($request)));
-    }
-```
-
-and add the import:
-
-```php
-use Kurt\Modules\I18n\Support\ScanCache;
-```
-
-- [ ] **Step 6: Run the tests and the gates**
+- [ ] **Step 5: Run the tests and the gates**
 
 ```bash
 C:/laragon/bin/php/php-8.4.5-nts-Win32-vs17-x64/php.exe vendor/bin/pest
