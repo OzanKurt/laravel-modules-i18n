@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Kurt\Modules\I18n\Support;
 
+use FilesystemIterator;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
+use Throwable;
 
 /**
  * Finds translation call sites in source.
@@ -47,6 +52,99 @@ class SourceScanner
         $configured = $this->config->get('i18n.scan.methods', []);
 
         return array_values(array_unique([...self::ALWAYS, ...$configured]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function paths(): array
+    {
+        /** @var list<string>|null $configured */
+        $configured = $this->config->get('i18n.scan.paths');
+
+        return $configured ?? [app_path(), resource_path()];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function excludedPaths(): array
+    {
+        /** @var list<string>|null $configured */
+        $configured = $this->config->get('i18n.scan.excluded_paths');
+
+        return $configured ?? [base_path('vendor'), storage_path()];
+    }
+
+    /**
+     * @return array{usages: list<Usage>, warnings: list<array{file: string, reason: string}>}
+     */
+    public function scan(): array
+    {
+        $usages = [];
+        $warnings = [];
+
+        foreach ($this->paths() as $root) {
+            if (! $this->files->isDirectory($root)) {
+                continue;
+            }
+
+            foreach ($this->filesUnder($root) as $file) {
+                try {
+                    $usages = [...$usages, ...$this->scanFile($file)];
+                } catch (Throwable $e) {
+                    // One malformed file must not cost the whole report; a
+                    // report with a named gap beats no report at all.
+                    $warnings[] = ['file' => $file, 'reason' => $e->getMessage()];
+                }
+            }
+        }
+
+        return ['usages' => $usages, 'warnings' => $warnings];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function filesUnder(string $root): array
+    {
+        $iterator = new RecursiveIteratorIterator(
+            // SKIP_DOTS keeps . and .. out; symlinks are not followed, so a
+            // link cannot walk us outside the configured root or loop forever.
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        );
+
+        $found = [];
+
+        /** @var SplFileInfo $file */
+        foreach ($iterator as $file) {
+            if (! $file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $path = $file->getPathname();
+
+            if ($this->isExcluded($path)) {
+                continue;
+            }
+
+            $found[] = $path;
+        }
+
+        sort($found);
+
+        return $found;
+    }
+
+    private function isExcluded(string $path): bool
+    {
+        foreach ($this->excludedPaths() as $excluded) {
+            if (str_starts_with($path, $excluded)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -92,7 +190,7 @@ class SourceScanner
      */
     private function tokenize(string $php, string $file): array
     {
-        $tokens = token_get_all($php);
+        $tokens = token_get_all($php, TOKEN_PARSE);
         $methods = $this->methods();
         $usages = [];
         $count = count($tokens);
