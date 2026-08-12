@@ -57,7 +57,12 @@ it('reports a dotted literal that fits no store as ambiguous', function () {
     $report = app(ScanReport::class)->generate();
     $keys = array_column($report['ambiguous'], 'key');
 
-    expect($keys)->toContain('real.literal');
+    // An ambiguous key is by definition not found in any store, so it is also
+    // reported missing for every requested locale: both are true of it at
+    // once, and together they mean the key is unplaceable, not merely
+    // untranslated.
+    expect($keys)->toContain('real.literal')
+        ->and($report['missing']['en'] ?? [])->toContain('real.literal');
 });
 
 it('withholds unused and warns when the scan finds nothing', function () {
@@ -150,4 +155,18 @@ it('still reports a used but undefined key named by ignored_keys as missing', fu
     expect($report['missing']['en'] ?? [])->toContain('real.literal')
         ->and($report['unused'])->not->toContain('real.stale')
         ->and($report['unused'])->not->toContain('real.literal');
+});
+
+it('never reports a vendor namespaced key as unused, even with both ignore lists empty', function () {
+    $root = scan_report_root($this);
+    mkdir($root.'/vendor/firewall/en', 0777, true);
+    file_put_contents($root.'/vendor/firewall/en/notifications.php', "<?php return ['stale' => 'Stale'];");
+
+    // ignored_groups and ignored_keys are both empty (see beforeEach), yet a
+    // vendor-namespaced key is still withheld from unused: it belongs to the
+    // package that ships it, so this application is not the one to judge it
+    // unused.
+    $report = app(ScanReport::class)->generate();
+
+    expect($report['unused'])->not->toContain('firewall::notifications.stale');
 });

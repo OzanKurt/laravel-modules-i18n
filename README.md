@@ -293,6 +293,12 @@ nothing calls it. Neither ever hides a key from `missing`: a key your code actua
 missing regardless of any ignore list, because "the developer chose not to be told this key is
 unused" is not the same claim as "this key does not need translating."
 
+A vendor namespaced key (`package::group.item`) is withheld from `unused` unconditionally, on top of
+the two settings above and regardless of what they are set to (even both empty). The reasoning is the
+same one behind `ignored_groups`, just not optional: a vendor string belongs to the package that
+ships it, so this application is not the right place to judge it unused. As with the two configured
+lists, this never hides a vendor key from `missing`; only `unused` is affected.
+
 If a scan finds **zero literal call sites** at all, that is always a misconfiguration (most likely
 `i18n.scan.paths` pointing somewhere with no source in it), never a legitimate "nothing is used."
 Publishing an `unused` list built from zero usages would read as "delete your whole catalogue," so the
