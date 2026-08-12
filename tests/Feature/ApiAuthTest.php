@@ -17,7 +17,7 @@ it('rejects unauthenticated reads with 401', function (): void {
     $this->getJson('/api/i18n/catalog')->assertUnauthorized();
     $this->getJson('/api/i18n/groups')->assertUnauthorized();
     $this->getJson('/api/i18n/json?locales=en')->assertUnauthorized();
-    $this->getJson('/api/i18n/scan')->assertUnauthorized();
+    $this->getJson('/api/i18n/report/scan')->assertUnauthorized();
 });
 
 it('rejects unauthenticated writes with 401', function (): void {

@@ -103,7 +103,6 @@ and response bodies are JSON.
 | Method & path                     | Purpose                                        |
 | --------------------------------- | ---------------------------------------------- |
 | `GET /api/i18n/catalog`           | List locales, JSON files, PHP groups, vendor packages. |
-| `GET /api/i18n/scan`              | Source-scan report: keys used in code vs. keys defined in files. |
 | `GET /api/i18n/groups`            | List every translation group as `{type, group}` pairs. |
 | `GET /api/i18n/locales`           | List the known locales.                        |
 | `GET /api/i18n/json`              | Read the JSON translation grid.                |
@@ -115,6 +114,7 @@ and response bodies are JSON.
 | `DELETE /api/i18n/translations`   | Delete a single key from every loaded locale.  |
 | `POST /api/i18n/locales`          | Create a new empty locale file.                |
 | `GET /api/i18n/report/missing`    | Cross-group missing-key report for a reference locale. |
+| `GET /api/i18n/report/scan`       | Source-scan report: keys used in code vs. keys defined in files. |
 | `GET /api/i18n/export`            | Export a locale (one group or all) to CSV/JSON.|
 | `POST /api/i18n/import`           | Import CSV/JSON `key,value` rows into a group.  |
 | `POST /api/i18n/translate-missing`| Fill a locale's missing keys via the configured translator. |
@@ -240,7 +240,7 @@ surfaces as **all** the reference keys being missing for it. The same report is 
 
 ## Source scanning
 
-`GET /api/i18n/scan` answers a different question than the missing-key report above: not "what is
+`GET /api/i18n/report/scan` answers a different question than the missing-key report above: not "what is
 one locale short of another" but "what does the code actually call, and does the catalogue line up
 with it." It walks the configured source paths for translation-function call sites and cross-checks
 every key it finds against the JSON and PHP files on disk, in one pass.

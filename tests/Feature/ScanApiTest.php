@@ -11,19 +11,19 @@ beforeEach(function () {
 });
 
 it('returns the four categories', function () {
-    $this->getJson('api/i18n/scan')
+    $this->getJson('api/i18n/report/scan')
         ->assertOk()
         ->assertJsonStructure(['data' => ['locales', 'missing', 'unused', 'dynamic', 'ambiguous', 'warnings']]);
 });
 
 it('honours a locale filter', function () {
-    $this->getJson('api/i18n/scan?locales=en')
+    $this->getJson('api/i18n/report/scan?locales=en')
         ->assertOk()
         ->assertJsonPath('data.locales', ['en']);
 });
 
 it('rejects an invalid locale in the filter', function () {
-    $this->getJson('api/i18n/scan?locales=en,b@d')->assertStatus(422);
+    $this->getJson('api/i18n/report/scan?locales=en,b@d')->assertStatus(422);
 });
 
 it('reuses a cached entry without refresh but forces a rescan when refresh is requested', function () {
@@ -56,12 +56,12 @@ it('reuses a cached entry without refresh but forces a rescan when refresh is re
         ],
     ], JSON_THROW_ON_ERROR));
 
-    $cached = $this->getJson('api/i18n/scan?locales=en')->assertOk()->json('data');
+    $cached = $this->getJson('api/i18n/report/scan?locales=en')->assertOk()->json('data');
 
     expect(array_column($cached['missing']['en'] ?? [], 'key'))->toContain('poisoned.cache.key')
         ->and(array_column($cached['missing']['en'] ?? [], 'key'))->not->toContain('real.literal');
 
-    $fresh = $this->getJson('api/i18n/scan?locales=en&refresh=1')->assertOk()->json('data');
+    $fresh = $this->getJson('api/i18n/report/scan?locales=en&refresh=1')->assertOk()->json('data');
 
     expect(array_column($fresh['missing']['en'] ?? [], 'key'))->not->toContain('poisoned.cache.key')
         ->and(array_column($fresh['missing']['en'] ?? [], 'key'))->toContain('real.literal');

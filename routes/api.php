@@ -37,7 +37,6 @@ Route::middleware([
 ])->group(function (): void {
     // Discovery.
     Route::get('catalog', CatalogController::class)->name('catalog');
-    Route::get('scan', ScanReportController::class)->name('scan');
     Route::get('groups', [GroupController::class, 'index'])->name('groups.index');
     Route::get('locales', [LocaleController::class, 'index'])->name('locales.index');
 
@@ -57,8 +56,11 @@ Route::middleware([
     // Locale creation.
     Route::post('locales', [LocaleController::class, 'store'])->name('locales.store');
 
-    // Reporting.
+    // Reporting. Both of these scan every group in one pass and compute an
+    // answer, which is what sets them apart from the discovery endpoints
+    // above: those only list what already exists.
     Route::get('report/missing', MissingKeyReportController::class)->name('report.missing');
+    Route::get('report/scan', ScanReportController::class)->name('report.scan');
 
     // Portable import / export + machine translation.
     Route::get('export', ExportController::class)->name('export');
