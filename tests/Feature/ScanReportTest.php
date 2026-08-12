@@ -47,7 +47,32 @@ it('reports a key used in code but absent from the files as missing', function (
     $report = app(ScanReport::class)->generate();
 
     expect($report['missing'])->toBeArray()
-        ->and($report['missing']['en'] ?? [])->toContain('real.literal');
+        ->and(array_column($report['missing']['en'] ?? [], 'key'))->toContain('real.literal');
+});
+
+it('carries the resolved store, group and package on every missing entry', function () {
+    $root = scan_report_root($this);
+    mkdir($root.'/en', 0777, true);
+    file_put_contents($root.'/en/real.php', "<?php return ['other' => 'Other'];");
+
+    $report = app(ScanReport::class)->generate();
+    $entries = array_column($report['missing']['en'] ?? [], null, 'key');
+
+    // "real.literal" places into the "real" group, because that group really
+    // exists on disk; "trans.literal" places nowhere, and saying so here is
+    // what tells a consumer the key is unplaceable rather than merely
+    // untranslated, without cross-referencing `ambiguous` by string.
+    expect($entries['real.literal'])->toBe([
+        'key' => 'real.literal',
+        'store' => 'group',
+        'group' => 'real',
+        'package' => null,
+    ])->and($entries['trans.literal'])->toBe([
+        'key' => 'trans.literal',
+        'store' => 'ambiguous',
+        'group' => null,
+        'package' => null,
+    ]);
 });
 
 it('reports non-literal call sites as dynamic without inventing a key', function () {
@@ -67,7 +92,7 @@ it('reports a dotted literal that fits no store as ambiguous', function () {
     // once, and together they mean the key is unplaceable, not merely
     // untranslated.
     expect($keys)->toContain('real.literal')
-        ->and($report['missing']['en'] ?? [])->toContain('real.literal');
+        ->and(array_column($report['missing']['en'] ?? [], 'key'))->toContain('real.literal');
 });
 
 it('withholds unused and warns when the scan finds nothing', function () {
@@ -140,7 +165,7 @@ it('still reports missing and the other categories when a file failed to scan', 
     // withheld; a partial walk still saw plenty worth reporting.
     $report = app(ScanReport::class)->generate();
 
-    expect($report['missing']['en'] ?? [])->toContain('real.literal')
+    expect(array_column($report['missing']['en'] ?? [], 'key'))->toContain('real.literal')
         ->and($report['dynamic'])->not->toBeEmpty();
 });
 
@@ -201,7 +226,7 @@ it('still reports a used but undefined key from an ignored group as missing', fu
 
     // Ignoring a group withholds its unused keys. A key the code calls and no
     // file defines is a real gap either way, so it stays in `missing`.
-    expect($report['missing']['en'] ?? [])->toContain('real.literal')
+    expect(array_column($report['missing']['en'] ?? [], 'key'))->toContain('real.literal')
         ->and($report['unused'])->not->toContain('real.stale')
         ->and($report['unused'])->not->toContain('real.literal');
 });
@@ -214,7 +239,7 @@ it('still reports a used but undefined key named by ignored_keys as missing', fu
 
     $report = app(ScanReport::class)->generate();
 
-    expect($report['missing']['en'] ?? [])->toContain('real.literal')
+    expect(array_column($report['missing']['en'] ?? [], 'key'))->toContain('real.literal')
         ->and($report['unused'])->not->toContain('real.stale')
         ->and($report['unused'])->not->toContain('real.literal');
 });

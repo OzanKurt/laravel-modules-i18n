@@ -14,6 +14,8 @@ use Kurt\Modules\I18n\Enums\FileType;
  * read at all; `ambiguous` means it was read but belongs nowhere we can name.
  * The developer's next action differs, so merging them would leave both
  * unactionable.
+ *
+ * @phpstan-type MissingKey array{key: string, store: 'json'|'group'|'vendor'|'ambiguous', group: string|null, package: string|null}
  */
 class ScanReport
 {
@@ -25,7 +27,7 @@ class ScanReport
 
     /**
      * @param  list<string>|null  $locales  the locales to check for missing keys; null or an empty list means every locale on disk
-     * @return array{locales: list<string>, missing: array<string, list<string>>, unused: list<string>, dynamic: list<array{file: string, line: int, method: string}>, ambiguous: list<array{key: string, file: string, line: int}>, warnings: list<array{file: string, reason: string}>}
+     * @return array{locales: list<string>, missing: array<string, list<MissingKey>>, unused: list<string>, dynamic: list<array{file: string, line: int, method: string}>, ambiguous: list<array{key: string, file: string, line: int}>, warnings: list<array{file: string, reason: string}>}
      */
     public function generate(?array $locales = null): array
     {
@@ -53,20 +55,37 @@ class ScanReport
                 continue;
             }
 
-            if ($resolver->resolve($usage->key)['store'] === 'ambiguous') {
+            $resolved = $resolver->resolve($usage->key);
+
+            if ($resolved['store'] === 'ambiguous') {
                 $ambiguous[] = ['key' => $usage->key, 'file' => $usage->file, 'line' => $usage->line];
             }
 
-            $codeKeys[$usage->key] = true;
+            // The resolution is kept, not thrown away after the ambiguity test:
+            // `missing` reports it, so a consumer can tell an unplaceable key
+            // from one that simply has no value yet without cross-referencing
+            // `ambiguous` by string.
+            $codeKeys[$usage->key] = $resolved;
         }
 
         $missing = [];
 
         foreach ($locales as $locale) {
-            $absent = array_values(array_filter(
-                array_keys($codeKeys),
-                fn (string $key): bool => ! isset($stored['byLocale'][$locale][$key]),
-            ));
+            $absent = [];
+
+            foreach ($codeKeys as $key => $resolved) {
+                if (isset($stored['byLocale'][$locale][$key])) {
+                    continue;
+                }
+
+                // A numeric-looking key comes back from the array as an int.
+                $absent[] = [
+                    'key' => (string) $key,
+                    'store' => $resolved['store'],
+                    'group' => $resolved['group'],
+                    'package' => $resolved['package'],
+                ];
+            }
 
             if ($absent !== []) {
                 $missing[$locale] = $absent;
@@ -178,12 +197,12 @@ class ScanReport
 
     /**
      * @param  list<string>  $locales
-     * @param  array<string, list<string>>  $missing
+     * @param  array<string, list<MissingKey>>  $missing
      * @param  list<string>  $unused
      * @param  list<array{file: string, line: int, method: string}>  $dynamic
      * @param  list<array{key: string, file: string, line: int}>  $ambiguous
      * @param  list<array{file: string, reason: string}>  $warnings
-     * @return array{locales: list<string>, missing: array<string, list<string>>, unused: list<string>, dynamic: list<array{file: string, line: int, method: string}>, ambiguous: list<array{key: string, file: string, line: int}>, warnings: list<array{file: string, reason: string}>}
+     * @return array{locales: list<string>, missing: array<string, list<MissingKey>>, unused: list<string>, dynamic: list<array{file: string, line: int, method: string}>, ambiguous: list<array{key: string, file: string, line: int}>, warnings: list<array{file: string, reason: string}>}
      */
     private function result(array $locales, array $missing, array $unused, array $dynamic, array $ambiguous, array $warnings): array
     {

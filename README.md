@@ -256,7 +256,12 @@ every key it finds against the JSON and PHP files on disk, in one pass.
 {
   "data": {
     "locales": ["en", "tr"],
-    "missing": { "tr": ["users.title"] },
+    "missing": {
+      "tr": [
+        { "key": "users.title",      "store": "group",     "group": "users", "package": null },
+        { "key": "some.orphan.key",  "store": "ambiguous", "group": null,    "package": null }
+      ]
+    },
     "unused": ["old.banner"],
     "dynamic": [{ "file": "app/Http/Controllers/HomeController.php", "line": 42, "method": "__" }],
     "ambiguous": [{ "key": "some.orphan.key", "file": "resources/views/home.blade.php", "line": 7 }],
@@ -268,7 +273,11 @@ every key it finds against the JSON and PHP files on disk, in one pass.
 The four categories answer different questions, so they are never merged into one list:
 
 - **`missing`**: keyed by locale (a locale is present only when it is missing at least one key), the
-  keys code calls literally that have no value in that locale's files.
+  keys code calls literally that have no value in that locale's files. Each entry is an object, not a
+  bare string, carrying where the key *would* go: `store` (`json` | `group` | `vendor` | `ambiguous`),
+  plus `group` and `package` when the resolver could name them (`null` otherwise). A `store` of
+  `ambiguous` means the key belongs nowhere we can name, so the entry tells you on its own that the
+  key is unplaceable, without cross-referencing the `ambiguous` list by string.
 - **`unused`**: keys the catalogue defines that no scanned call site references. Locale-independent, so
   a key only `en` has to lose is still "used" for every locale's purposes. It is withheld (an empty
   list plus a `warnings` entry) whenever the scan cannot vouch for the whole walk: see **When `unused`
@@ -289,9 +298,11 @@ Every `file` in `dynamic`, `ambiguous` and `warnings` is written relative to the
 absolute path, since a relative one would only have to climb back out.
 
 A key can appear in **both** `ambiguous` and `missing`. An ambiguous key is by definition not found in
-any store, so every requested locale reports it missing too. Both are true of it at once, and together
-they mean the key is *unplaceable*, not merely untranslated. Do not auto-create it in a file, since
-there is no evidence which file it belongs in.
+any store, so every requested locale reports it missing too, with `"store": "ambiguous"` on the
+`missing` entry. Both are true of it at once, and together they mean the key is *unplaceable*, not
+merely untranslated. Do not auto-create it in a file, since there is no evidence which file it belongs
+in. `ambiguous` still carries the file and line, which `missing` does not: it is keyed by locale, and a
+key's call sites have nothing to do with which locale lacks it.
 
 `config('i18n.scan.ignored_groups')` and `config('i18n.scan.ignored_keys')` suppress `unused` only.
 A key named by either config, or belonging to an ignored group, is never reported unused even if

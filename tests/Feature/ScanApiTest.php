@@ -58,11 +58,11 @@ it('reuses a cached entry without refresh but forces a rescan when refresh is re
 
     $cached = $this->getJson('api/i18n/scan?locales=en')->assertOk()->json('data');
 
-    expect($cached['missing']['en'] ?? [])->toContain('poisoned.cache.key')
-        ->and($cached['missing']['en'] ?? [])->not->toContain('real.literal');
+    expect(array_column($cached['missing']['en'] ?? [], 'key'))->toContain('poisoned.cache.key')
+        ->and(array_column($cached['missing']['en'] ?? [], 'key'))->not->toContain('real.literal');
 
     $fresh = $this->getJson('api/i18n/scan?locales=en&refresh=1')->assertOk()->json('data');
 
-    expect($fresh['missing']['en'] ?? [])->not->toContain('poisoned.cache.key')
-        ->and($fresh['missing']['en'] ?? [])->toContain('real.literal');
+    expect(array_column($fresh['missing']['en'] ?? [], 'key'))->not->toContain('poisoned.cache.key')
+        ->and(array_column($fresh['missing']['en'] ?? [], 'key'))->toContain('real.literal');
 });
