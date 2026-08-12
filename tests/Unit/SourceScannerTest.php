@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\View\Compilers\BladeCompiler;
 use Kurt\Modules\I18n\Support\SourceScanner;
 use Kurt\Modules\I18n\Support\Usage;
 
@@ -20,6 +21,9 @@ function scanner(array $scan = []): SourceScanner
             'cache_path' => null,
         ], $scan)]]),
         new Filesystem,
+        // compileString() never touches the cache, so a throwaway path keeps
+        // this unit test free of both the container and the disk.
+        new BladeCompiler(new Filesystem, sys_get_temp_dir()),
     );
 }
 
@@ -103,6 +107,13 @@ it('treats a concatenated argument as dynamic rather than a truncated literal', 
 
     expect(keysFrom($usages))->not->toContain('a')
         ->and(array_values(array_filter($usages, fn (Usage $u): bool => ! $u->isLiteral)))->toHaveCount(3);
+});
+
+it('scans a blade file with a scanner built by hand rather than by the container', function () {
+    $usages = scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/shifted.blade.php');
+    $shifted = array_values(array_filter($usages, fn (Usage $u): bool => $u->key === 'shifted.after.comment'));
+
+    expect($shifted)->toHaveCount(1)->and($shifted[0]->line)->toBe(6);
 });
 
 it('recognises an application wrapper added through config', function () {

@@ -6,7 +6,7 @@ namespace Kurt\Modules\I18n\Support;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Blade;
+use Illuminate\View\Compilers\BladeCompiler;
 
 /**
  * Finds translation call sites in source.
@@ -35,6 +35,7 @@ class SourceScanner
     public function __construct(
         private readonly Repository $config,
         private readonly Filesystem $files,
+        private readonly BladeCompiler $blade,
     ) {}
 
     /**
@@ -60,10 +61,30 @@ class SourceScanner
         // and echo into real PHP, which also means Laravel's own compiler
         // decides what a directive means instead of us maintaining a list.
         if (str_ends_with($absolutePath, '.blade.php')) {
-            $source = Blade::compileString($source);
+            $source = $this->blade->compileString($this->blankComments($source));
         }
 
         return $this->tokenize($source, $absolutePath);
+    }
+
+    /**
+     * Replaces every Blade comment with the newlines it spans.
+     *
+     * The compiler deletes `{{-- ... --}}` whole, newlines included, so a
+     * multi-line comment pulls every later line of the compiled output upwards
+     * and each finding after it would be reported too early. Blanking the
+     * comment first leaves the compiler nothing to strip there, so a line in
+     * the compiled output is still the line the author wrote. The pattern is
+     * the compiler's own, non-greedy and dot-matches-newline, so exactly the
+     * same spans are removed; only the newlines survive.
+     */
+    private function blankComments(string $source): string
+    {
+        return preg_replace_callback(
+            '/\{\{--.*?--\}\}/s',
+            fn (array $match): string => str_repeat("\n", substr_count($match[0], "\n")),
+            $source,
+        ) ?? $source;
     }
 
     /**
