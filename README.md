@@ -359,7 +359,10 @@ The full `scan` config block, with its defaults:
 - `excluded_paths`: roots skipped entirely (symlinks under a scanned root are never followed either,
   regardless of this list). `null` resolves to `[base_path('vendor'), storage_path()]`.
 - `methods`: extra function/method names recognised as translation calls, on top of the built-in
-  `__`, `trans` and `trans_choice`.
+  `__`, `trans` and `trans_choice`. `get` and `choice` are recognised too, but **only** on a translator
+  receiver (`Lang::get(…)`, `app('translator')->choice(…)`), and listing either here does not change
+  that: they are far too common on other objects for a bare `$request->get('x')` or `Cache::get('x')`
+  to be a translation call, and no configuration can say otherwise.
 - `ignored_keys` / `ignored_groups`: see above, `unused` only, never `missing`.
 - `cache`: when `true`, scanned files are fingerprinted (path + mtime + size) so an unchanged file is
   not re-tokenised on the next scan; the whole cache also keys itself on a hash of this `scan` config

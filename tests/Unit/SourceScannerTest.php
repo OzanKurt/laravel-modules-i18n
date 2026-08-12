@@ -144,6 +144,17 @@ it('recognises an application wrapper added through config', function () {
     expect($keys)->toContain('real.literal');
 });
 
+it('does not let a configured method defeat the translator receiver check', function () {
+    $usages = scanner(['methods' => ['__', 'trans', 'trans_choice', 'get']])
+        ->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php');
+    $get = array_values(array_filter($usages, fn (Usage $u): bool => $u->method === 'get'));
+
+    // Configuring `get` must not turn every `$request->get()` in the codebase
+    // into a translation key; the receiver still has to be the translator.
+    expect(array_map(fn (Usage $u): string => $u->key, $get))
+        ->toBe(['lang.get.literal', 'translator.literal', 'facade.get.literal']);
+});
+
 it('treats a file genuinely nested under the root as inside it', function () {
     expect(isInside('C:/app/root/sub/File.php', 'C:/app/root'))->toBeTrue();
 });

@@ -334,7 +334,14 @@ class SourceScanner
             }
 
             $name = $this->lastSegment($token[1]);
-            $plain = in_array($name, $methods, true);
+
+            // A configured name never buys its way out of the receiver check.
+            // `get` and `choice` are far too common on other objects to be
+            // counted on their own, and that is a fact about the language, not
+            // a default someone might reasonably want to override: listing
+            // `get` in `scan.methods` would otherwise report the argument of
+            // every `$request->get()` and `Cache::get()` in the codebase.
+            $plain = in_array($name, $methods, true) && ! in_array($name, self::TRANSLATOR_ONLY, true);
 
             if (! $plain && ! in_array($name, self::TRANSLATOR_ONLY, true)) {
                 continue;
