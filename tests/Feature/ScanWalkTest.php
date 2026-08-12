@@ -258,6 +258,30 @@ it('does not warn about a missing default root', function () {
     }
 });
 
+it('still reports its usages, and blames nothing, when the cache cannot be written', function () {
+    $dir = i18n_tmp_dir();
+    file_put_contents($dir.'/Good.php', "<?php\n\n__('good.key');\n");
+
+    // An ordinary file where the cache wants a directory. Creating the cache
+    // directory can never succeed under it, on any platform, so the write
+    // fails for a reason that has nothing to do with the file being scanned.
+    file_put_contents($dir.'/blocked', 'not a directory');
+
+    config()->set('i18n.scan.paths', [$dir]);
+    config()->set('i18n.scan.cache', true);
+    config()->set('i18n.scan.cache_path', $dir.'/blocked/i18n-scan.json');
+
+    try {
+        $result = app(SourceScanner::class)->scan();
+        $blamed = implode("\n", array_map(fn (array $warning): string => $warning['file'], $result['warnings']));
+
+        expect(array_map(fn (Usage $u): string => $u->key, $result['usages']))->toContain('good.key')
+            ->and($blamed)->not->toContain('Good.php');
+    } finally {
+        i18n_rrmdir($dir);
+    }
+});
+
 it('reports a file it cannot read as a warning and scans the rest', function () {
     $dir = i18n_tmp_dir();
     file_put_contents($dir.'/Good.php', "<?php\n\n__('good.key');\n");

@@ -120,8 +120,18 @@ class SourceScanner
                     }
 
                     $found = $this->scanFile($file);
-                    $this->cache->put($file, $mtime, $size, $found);
+
+                    // The findings are banked before the cache is offered
+                    // them. Storing an entry is housekeeping for the next run
+                    // and has no bearing on this one, so it must not sit
+                    // between reading a file and reporting what was in it:
+                    // anything that went wrong there would land in the catch
+                    // below and turn a file that scanned perfectly into a
+                    // warning with its keys thrown away. `put()` swallows its
+                    // own trouble as well, so neither half depends on the
+                    // other being got right.
                     $usages = [...$usages, ...$found];
+                    $this->cache->put($file, $mtime, $size, $found);
                 } catch (Throwable $e) {
                     // One malformed file must not cost the whole report; a
                     // report with a named gap beats no report at all.
