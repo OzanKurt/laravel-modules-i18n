@@ -17,12 +17,12 @@ use Kurt\Modules\I18n\Enums\FileType;
  *
  * @phpstan-type MissingKey array{key: string, store: 'json'|'group'|'vendor'|'ambiguous', group: string|null, package: string|null}
  */
-class ScanReport
+final readonly class ScanReport
 {
     public function __construct(
-        private readonly SourceScanner $scanner,
-        private readonly TranslationManager $manager,
-        private readonly Repository $config,
+        private SourceScanner $scanner,
+        private TranslationManager $manager,
+        private Repository $config,
     ) {}
 
     /**
@@ -159,7 +159,7 @@ class ScanReport
 
                 foreach ($requested as $locale) {
                     // A requested locale the catalogue does not know has no row
-                    // here, so every key counts as absent for it — which is
+                    // here, so every key counts as absent for it, which is
                     // exactly right for a locale with no files on disk.
                     if (($grid['rows'][$key][$locale] ?? null) !== null) {
                         $byLocale[$locale][$full] = true;
