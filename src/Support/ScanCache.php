@@ -6,7 +6,6 @@ namespace Kurt\Modules\I18n\Support;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
-use JsonException;
 use Throwable;
 
 /**
@@ -48,7 +47,7 @@ class ScanCache
     /**
      * The decoded document, read on first use and held until {@see flush()}.
      *
-     * @var array{version: int, config: string, files: array<array-key, mixed>}|null
+     * @var array{version: int, config: string|null, files: array<array-key, mixed>}|null
      */
     private ?array $document = null;
 
@@ -175,7 +174,9 @@ class ScanCache
         $document = $this->document;
         $this->dirty = false;
 
-        if ($document === null) {
+        // A document read without a usable fingerprint has nothing to key
+        // itself on, so there is no honest way to write it back.
+        if ($document === null || $document['config'] === null) {
             return;
         }
 
@@ -216,15 +217,27 @@ class ScanCache
         return $configured ?? storage_path('framework/cache/i18n-scan.json');
     }
 
-    private function fingerprint(): string
+    /**
+     * The hash of the scan configuration, or null when it cannot be taken.
+     *
+     * Configuration holding something json_encode() will not accept is not a
+     * reason to fail a scan, so the answer is "no fingerprint" rather than an
+     * exception. Nothing matches null, so the whole cache reads as empty and
+     * {@see persist()} declines to write.
+     */
+    private function fingerprint(): ?string
     {
-        return hash('sha256', json_encode($this->config->get('i18n.scan'), JSON_THROW_ON_ERROR));
+        try {
+            return hash('sha256', json_encode($this->config->get('i18n.scan'), JSON_THROW_ON_ERROR));
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**
      * The decoded document, read from disk the first time it is asked for.
      *
-     * @return array{version: int, config: string, files: array<array-key, mixed>}
+     * @return array{version: int, config: string|null, files: array<array-key, mixed>}
      */
     private function document(): array
     {
@@ -241,21 +254,32 @@ class ScanCache
      * document nobody has looked at yet. {@see get()} checks a row before it
      * trusts one.
      *
-     * @return array{version: int, config: string, files: array<array-key, mixed>}
+     * Every way the read can go wrong lands in the one catch, not just a parse
+     * failure: a cache file that exists but the process may not read makes
+     * Filesystem::get() raise, and a scan whose every file threw on the cache
+     * read before it was ever looked at would report zero usages and withhold
+     * `unused`. A cache that cannot be read is a miss, never an error.
+     *
+     * @return array{version: int, config: string|null, files: array<array-key, mixed>}
      */
     private function read(): array
     {
         $fingerprint = $this->fingerprint();
         $empty = ['version' => self::FORMAT, 'config' => $fingerprint, 'files' => []];
-        $path = $this->path();
 
-        if (! $this->files->exists($path)) {
+        if ($fingerprint === null) {
             return $empty;
         }
 
         try {
+            $path = $this->path();
+
+            if (! $this->files->exists($path)) {
+                return $empty;
+            }
+
             $decoded = json_decode((string) $this->files->get($path), true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
+        } catch (Throwable) {
             return $empty;
         }
 

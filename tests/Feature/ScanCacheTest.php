@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Filesystem\Filesystem;
 use Kurt\Modules\I18n\Support\ScanCache;
 use Kurt\Modules\I18n\Support\Usage;
 
@@ -118,6 +119,38 @@ it('misses everything when the scan config changed', function () {
 
     // Same file, same fingerprint, but a new method the earlier scan never looked for.
     config()->set('i18n.scan.methods', ['__', 'trans', 'trans_choice', 'myTrans']);
+
+    expect(app(ScanCache::class)->get('/a/b.php', 123, 45))->toBeNull();
+});
+
+it('treats a cache file it cannot read as a miss rather than an error', function () {
+    $files = new class extends Filesystem
+    {
+        public function exists($path)
+        {
+            return true;
+        }
+
+        public function get($path, $lock = false)
+        {
+            // What a file written by the deploy user and read by php-fpm looks
+            // like from here: PHP raises a warning, and Laravel's error handler
+            // turns that into this.
+            throw new ErrorException("file_get_contents({$path}): Failed to open stream: Permission denied");
+        }
+    };
+
+    // A read that raised instead of missing would take every file in the walk
+    // with it: zero usages, one warning per file, and `unused` withheld.
+    expect((new ScanCache(config(), $files))->get('/a/b.php', 123, 45))->toBeNull();
+});
+
+it('treats configuration it cannot fingerprint as a miss rather than an error', function () {
+    scan_cache_store('/a/b.php', 123, 45, [new Usage('a.b', '/a/b.php', 1, '__', true)]);
+
+    // NAN cannot be JSON encoded, so the hash the whole document is keyed on
+    // cannot be taken at all. That is not a reason to fail a scan.
+    config()->set('i18n.scan.methods', [NAN]);
 
     expect(app(ScanCache::class)->get('/a/b.php', 123, 45))->toBeNull();
 });
