@@ -5,25 +5,31 @@ declare(strict_types=1);
 use Illuminate\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
+use Kurt\Modules\I18n\Support\ScanCache;
 use Kurt\Modules\I18n\Support\SourceScanner;
 use Kurt\Modules\I18n\Support\Usage;
 
 function scanner(array $scan = []): SourceScanner
 {
+    $config = new Repository(['i18n' => ['scan' => array_merge([
+        'paths' => null,
+        'excluded_paths' => null,
+        'methods' => ['__', 'trans', 'trans_choice'],
+        'ignored_keys' => [],
+        'ignored_groups' => [],
+        'cache' => false,
+        'cache_path' => null,
+    ], $scan)]]);
+
     return new SourceScanner(
-        new Repository(['i18n' => ['scan' => array_merge([
-            'paths' => null,
-            'excluded_paths' => null,
-            'methods' => ['__', 'trans', 'trans_choice'],
-            'ignored_keys' => [],
-            'ignored_groups' => [],
-            'cache' => false,
-            'cache_path' => null,
-        ], $scan)]]),
+        $config,
         new Filesystem,
         // compileString() never touches the cache, so a throwaway path keeps
         // this unit test free of both the container and the disk.
         new BladeCompiler(new Filesystem, sys_get_temp_dir()),
+        // "cache" is false above, so ScanCache::get()/put() are no-ops here;
+        // this unit test stays container-free and never touches disk.
+        new ScanCache($config, new Filesystem),
     );
 }
 

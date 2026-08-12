@@ -42,6 +42,7 @@ class SourceScanner
         private readonly Repository $config,
         private readonly Filesystem $files,
         private readonly BladeCompiler $blade,
+        private readonly ScanCache $cache,
     ) {}
 
     /**
@@ -108,7 +109,19 @@ class SourceScanner
 
             foreach ($walk['files'] as $file) {
                 try {
-                    $usages = [...$usages, ...$this->scanFile($file)];
+                    $mtime = (int) $this->files->lastModified($file);
+                    $size = (int) $this->files->size($file);
+                    $cached = $this->cache->get($file, $mtime, $size);
+
+                    if ($cached !== null) {
+                        $usages = [...$usages, ...$cached];
+
+                        continue;
+                    }
+
+                    $found = $this->scanFile($file);
+                    $this->cache->put($file, $mtime, $size, $found);
+                    $usages = [...$usages, ...$found];
                 } catch (Throwable $e) {
                     // One malformed file must not cost the whole report; a
                     // report with a named gap beats no report at all.
