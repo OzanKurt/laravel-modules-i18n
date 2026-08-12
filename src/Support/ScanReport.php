@@ -24,7 +24,7 @@ class ScanReport
     ) {}
 
     /**
-     * @param  list<string>|null  $locales
+     * @param  list<string>|null  $locales  the locales to check for missing keys; null or an empty list means every locale on disk
      * @return array{locales: list<string>, missing: array<string, list<string>>, unused: list<string>, dynamic: list<array{file: string, line: int, method: string}>, ambiguous: list<array{key: string, file: string, line: int}>, warnings: list<array{file: string, reason: string}>}
      */
     public function generate(?array $locales = null): array
@@ -32,9 +32,14 @@ class ScanReport
         $scan = $this->scanner->scan();
         $warnings = $scan['warnings'];
         $catalog = $this->manager->catalog();
-        $locales = $locales ?? $catalog->locales;
 
-        $stored = $this->storedKeys($locales);
+        // An empty list carries no information about which locales the caller
+        // cares about, and answering it literally would report an empty
+        // `missing` for a catalogue that may be full of gaps. Treat it as the
+        // absent filter it is, and say so through the returned `locales`.
+        $locales = $locales === null || $locales === [] ? $catalog->locales : $locales;
+
+        $stored = $this->storedKeys($locales, $catalog->locales);
         $resolver = new KeyResolver($catalog, static fn (string $key): bool => isset($stored['json'][$key]));
 
         $dynamic = [];
@@ -86,14 +91,15 @@ class ScanReport
     }
 
     /**
-     * @param  list<string>  $locales
+     * @param  list<string>  $requested  the locales `missing` is computed for
+     * @param  list<string>  $known  every locale the catalogue holds
      * @return array{all: array<string, true>, json: array<string, true>, byLocale: array<string, array<string, true>>}
      */
-    private function storedKeys(array $locales): array
+    private function storedKeys(array $requested, array $known): array
     {
         $all = [];
         $json = [];
-        $byLocale = array_fill_keys($locales, []);
+        $byLocale = array_fill_keys($requested, []);
 
         // groups() already yields the JSON pseudo-group (group === null) and
         // every vendor group as "package::group", so iterating it is the whole
@@ -102,7 +108,13 @@ class ScanReport
         foreach ($this->manager->groups() as $source) {
             $type = $source['type'];
             $group = $source['group'];
-            $grid = $this->manager->grid($type, $group, $locales);
+
+            // Read every locale the catalogue knows, never just the requested
+            // subset. `all` feeds `unused` and `json` feeds the resolver's JSON
+            // test, and both categories are locale-independent by design: a key
+            // that only "en" defines is still defined when the caller asks
+            // about "tr". Only `byLocale` narrows to the requested locales.
+            $grid = $this->manager->grid($type, $group, $known);
             $prefix = $group !== null ? $group.'.' : '';
 
             foreach ($grid['keys'] as $key) {
@@ -113,7 +125,10 @@ class ScanReport
                     $json[$full] = true;
                 }
 
-                foreach ($locales as $locale) {
+                foreach ($requested as $locale) {
+                    // A requested locale the catalogue does not know has no row
+                    // here, so every key counts as absent for it — which is
+                    // exactly right for a locale with no files on disk.
                     if (($grid['rows'][$key][$locale] ?? null) !== null) {
                         $byLocale[$locale][$full] = true;
                     }
