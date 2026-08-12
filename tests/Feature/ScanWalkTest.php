@@ -221,6 +221,43 @@ it('reports a root it cannot walk as a warning and scans the rest', function () 
     }
 });
 
+it('warns about a root that was explicitly configured but does not exist', function () {
+    $dir = i18n_tmp_dir();
+    $missing = $dir.'/nowhere';
+
+    config()->set('i18n.scan.paths', [$missing]);
+
+    try {
+        $result = app(SourceScanner::class)->scan();
+        $blamed = array_map(fn (array $warning): string => $warning['file'], $result['warnings']);
+
+        expect(implode("\n", $blamed))->toContain('nowhere');
+    } finally {
+        i18n_rrmdir($dir);
+    }
+});
+
+it('does not warn about a missing default root', function () {
+    // A missing `resources` directory, or a missing `app` directory, is a
+    // legitimate application shape when the developer never configured
+    // `i18n.scan.paths` at all; the built-in fallback must not blame it.
+    $dir = i18n_tmp_dir();
+    $missingAppPath = $dir.'/app-that-is-not-there';
+
+    config()->set('i18n.scan.paths', null);
+    config()->set('i18n.scan.excluded_paths', []);
+    app()->useAppPath($missingAppPath);
+
+    try {
+        $result = app(SourceScanner::class)->scan();
+        $blamed = array_map(fn (array $warning): string => $warning['file'], $result['warnings']);
+
+        expect(implode("\n", $blamed))->not->toContain('app-that-is-not-there');
+    } finally {
+        i18n_rrmdir($dir);
+    }
+});
+
 it('reports a file it cannot read as a warning and scans the rest', function () {
     $dir = i18n_tmp_dir();
     file_put_contents($dir.'/Good.php', "<?php\n\n__('good.key');\n");

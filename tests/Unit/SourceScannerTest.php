@@ -32,6 +32,21 @@ function keysFrom(array $usages): array
     return array_values(array_map(fn (Usage $u): string => $u->key, array_filter($usages, fn (Usage $u): bool => $u->isLiteral)));
 }
 
+/**
+ * Calls the private `isInside()` containment boundary directly.
+ *
+ * A real escaping file cannot be produced in this environment (see
+ * `tests/Feature/ScanWalkTest.php`), so the boundary itself is exercised here
+ * with contrived inputs instead of relying on the filesystem.
+ */
+function isInside(string $path, string $root): bool
+{
+    $method = new ReflectionMethod(SourceScanner::class, 'isInside');
+    $method->setAccessible(true);
+
+    return (bool) $method->invoke(scanner(), $path, $root);
+}
+
 it('never reports a call written inside a comment or a string', function () {
     $keys = keysFrom(scanner()->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php'));
 
@@ -121,4 +136,25 @@ it('recognises an application wrapper added through config', function () {
         ->scanFile(__DIR__.'/../Fixtures/scan-app/Plain.php'));
 
     expect($keys)->toContain('real.literal');
+});
+
+it('treats a file genuinely nested under the root as inside it', function () {
+    expect(isInside('C:/app/root/sub/File.php', 'C:/app/root'))->toBeTrue();
+});
+
+it('treats a file outside the root entirely as outside it', function () {
+    expect(isInside('C:/app/elsewhere/File.php', 'C:/app/root'))->toBeFalse();
+});
+
+it('does not treat a sibling directory whose name starts the same way as inside the root', function () {
+    expect(isInside('C:/app/root-tools/File.php', 'C:/app/root'))->toBeFalse();
+});
+
+it('treats the root path itself as inside the root', function () {
+    expect(isInside('C:/app/root', 'C:/app/root'))->toBeTrue();
+});
+
+it('treats a root written with a trailing separator the same as one without', function () {
+    expect(isInside('C:/app/root/sub/File.php', 'C:/app/root/'))->toBeTrue()
+        ->and(isInside('C:/app/root-tools/File.php', 'C:/app/root/'))->toBeFalse();
 });

@@ -85,8 +85,25 @@ class SourceScanner
         $usages = [];
         $warnings = [];
 
+        // `paths()` cannot tell a configured root from a fallback one once it
+        // has merged them into one list, so the raw config is asked directly:
+        // a root the developer typed in deserves a warning when it is not
+        // there, but the package's own [app_path(), resource_path()] default
+        // is a guess about a shape the application may legitimately not have,
+        // and a warning about it could never be resolved by the developer.
+        $usingDefaultPaths = $this->config->get('i18n.scan.paths') === null;
+
+        // Resolved once per scan and reused for every root and every file
+        // below it, rather than re-resolving the same configured exclusions
+        // on every single file.
+        $excluded = $this->resolvedExcludedPaths();
+
         foreach ($this->paths() as $root) {
-            $walk = $this->filesUnder($root);
+            if ($usingDefaultPaths && ! $this->files->isDirectory($root)) {
+                continue;
+            }
+
+            $walk = $this->filesUnder($root, $excluded);
             $warnings = [...$warnings, ...$walk['warnings']];
 
             foreach ($walk['files'] as $file) {
@@ -110,11 +127,14 @@ class SourceScanner
      * because a directory below it is unreadable or has just been removed, is
      * named in a warning rather than thrown: the roots after it still deserve
      * a report, and a root the developer configured but that is not there is
-     * a configuration mistake worth being told about.
+     * a configuration mistake worth being told about. (A missing root that
+     * came from the built-in default path list never reaches this method at
+     * all; `scan()` skips it before the walk starts.)
      *
+     * @param  list<string>  $excluded  Resolved once per scan by {@see resolvedExcludedPaths()}.
      * @return array{files: list<string>, warnings: list<array{file: string, reason: string}>}
      */
-    private function filesUnder(string $root): array
+    private function filesUnder(string $root, array $excluded): array
     {
         $found = [];
         $warnings = [];
@@ -149,7 +169,7 @@ class SourceScanner
                     continue;
                 }
 
-                if ($this->isExcluded($path)) {
+                if ($this->isExcluded($path, $excluded)) {
                     continue;
                 }
 
@@ -164,20 +184,38 @@ class SourceScanner
         return ['files' => $found, 'warnings' => $warnings];
     }
 
-    private function isExcluded(string $path): bool
+    /**
+     * @param  list<string>  $excluded  Already resolved by {@see resolvedExcludedPaths()}.
+     */
+    private function isExcluded(string $path, array $excluded): bool
     {
-        foreach ($this->excludedPaths() as $excluded) {
-            // A configured exclusion may be written with `..` or with the
-            // other platform's separator, so it is resolved the same way the
-            // scanned path was before the two are compared.
-            $resolved = realpath($excluded);
-
-            if ($this->isInside($path, $resolved === false ? $excluded : $resolved)) {
+        foreach ($excluded as $candidate) {
+            if ($this->isInside($path, $candidate)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Resolves every configured exclusion once per scan.
+     *
+     * A configured exclusion may be written with `..` or with the other
+     * platform's separator, so it is resolved the same way a scanned path is
+     * before the two are ever compared. Doing that once here, instead of
+     * inside {@see isExcluded()}, means the resolution work is not repeated
+     * for every single file the walk visits.
+     *
+     * @return list<string>
+     */
+    private function resolvedExcludedPaths(): array
+    {
+        return array_map(function (string $excluded): string {
+            $resolved = realpath($excluded);
+
+            return $resolved === false ? $excluded : $resolved;
+        }, $this->excludedPaths());
     }
 
     /**
