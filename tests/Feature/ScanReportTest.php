@@ -8,7 +8,12 @@ use Kurt\Modules\I18n\Tests\TestCase;
 
 beforeEach(function () {
     config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-app']);
-    config()->set('i18n.scan.excluded_paths', []);
+
+    // Broken.php is deliberately unparseable, and a scan that records any
+    // file-level warning withholds `unused` entirely. Every test about what
+    // `unused` contains therefore leaves it out of the walk; the tests about
+    // warnings put it back by clearing this list.
+    config()->set('i18n.scan.excluded_paths', [__DIR__.'/../Fixtures/scan-app/Broken.php']);
     config()->set('i18n.scan.cache', false);
     config()->set('i18n.scan.ignored_groups', []);
     config()->set('i18n.scan.ignored_keys', []);
@@ -76,10 +81,40 @@ it('withholds unused and warns when the scan finds nothing', function () {
 });
 
 it('carries scanner warnings through to the report', function () {
+    config()->set('i18n.scan.excluded_paths', []);
+
     $report = app(ScanReport::class)->generate();
 
     expect(array_column($report['warnings'], 'file'))
         ->toContain(realpath(__DIR__.'/../Fixtures/scan-app/Broken.php'));
+});
+
+it('withholds unused and warns when any file failed to scan', function () {
+    config()->set('i18n.scan.excluded_paths', []);
+
+    $root = scan_report_root($this);
+    mkdir($root.'/en', 0777, true);
+    file_put_contents($root.'/en/dashboard.php', "<?php return ['stale' => 'Stale'];");
+
+    // Broken.php is back in the walk, so the scan is partial. A key used only
+    // in a file that failed is indistinguishable from a key nothing uses, and
+    // a consumer acting on `unused` would delete one the application calls.
+    $report = app(ScanReport::class)->generate();
+
+    expect($report['unused'])->toBe([])
+        ->and(array_column($report['warnings'], 'reason'))
+        ->toContain('Some files could not be scanned, so unused was withheld; a key used only in a file that failed would look unused.');
+});
+
+it('still reports missing and the other categories when a file failed to scan', function () {
+    config()->set('i18n.scan.excluded_paths', []);
+
+    // Only `unused` is advice to delete something, so only `unused` is
+    // withheld; a partial walk still saw plenty worth reporting.
+    $report = app(ScanReport::class)->generate();
+
+    expect($report['missing']['en'] ?? [])->toContain('real.literal')
+        ->and($report['dynamic'])->not->toBeEmpty();
 });
 
 it('reports a stored key that no code uses as unused', function () {

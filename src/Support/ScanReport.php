@@ -82,6 +82,19 @@ class ScanReport
             return $this->result($locales, $missing, [], $dynamic, $ambiguous, $warnings);
         }
 
+        if ($scan['warnings'] !== []) {
+            // The same reasoning as the guard above, one file at a time. A key
+            // called only from a file that failed to scan looks exactly like a
+            // key nothing calls, so publishing `unused` after a partial walk
+            // invites someone to delete a key the application uses at runtime.
+            // Withholding it is all-or-nothing because the walk is: there is no
+            // way to tell which of the surviving "unused" keys the failed files
+            // would have vouched for.
+            $warnings[] = ['file' => '', 'reason' => 'Some files could not be scanned, so unused was withheld; a key used only in a file that failed would look unused.'];
+
+            return $this->result($locales, $missing, [], $dynamic, $ambiguous, $warnings);
+        }
+
         $unused = array_values(array_filter(
             array_keys($stored['all']),
             fn (string $key): bool => ! isset($codeKeys[$key]) && ! $this->isIgnored($key),

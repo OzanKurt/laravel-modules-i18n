@@ -270,7 +270,9 @@ The four categories answer different questions, so they are never merged into on
 - **`missing`**: keyed by locale (a locale is present only when it is missing at least one key), the
   keys code calls literally that have no value in that locale's files.
 - **`unused`**: keys the catalogue defines that no scanned call site references. Locale-independent, so
-  a key only `en` has to lose is still "used" for every locale's purposes.
+  a key only `en` has to lose is still "used" for every locale's purposes. It is withheld (an empty
+  list plus a `warnings` entry) whenever the scan cannot vouch for the whole walk: see **When `unused`
+  is withheld** below.
 - **`dynamic`**: call sites whose first argument was not a plain string literal (a variable, a
   concatenation, an interpolated string), so the key could not be read at all. Nothing is guessed;
   these are left for a human to check by hand.
@@ -299,11 +301,24 @@ same one behind `ignored_groups`, just not optional: a vendor string belongs to 
 ships it, so this application is not the right place to judge it unused. As with the two configured
 lists, this never hides a vendor key from `missing`; only `unused` is affected.
 
-If a scan finds **zero literal call sites** at all, that is always a misconfiguration (most likely
-`i18n.scan.paths` pointing somewhere with no source in it), never a legitimate "nothing is used."
-Publishing an `unused` list built from zero usages would read as "delete your whole catalogue," so the
-report withholds `unused` (an empty list) and adds an entry to `warnings` instead, pointing at
-`i18n.scan.paths`.
+### When `unused` is withheld
+
+`unused` is the only category that is advice to *delete* something, so it is published only when the
+scan can vouch for the whole walk. Two conditions withhold it, each returning an empty list plus an
+explanatory entry in `warnings`:
+
+1. **Zero literal call sites were found.** That is always a misconfiguration (most likely
+   `i18n.scan.paths` pointing somewhere with no source in it), never a legitimate "nothing is used."
+   Publishing an `unused` list built from zero usages would read as "delete your whole catalogue," so
+   the warning points at `i18n.scan.paths` instead.
+2. **Any file failed to scan**, i.e. `warnings` is not empty. A key called only from a file that could
+   not be read or parsed is indistinguishable from a key nothing calls, so it would be reported unused
+   and a consumer acting on the report would delete a key the application uses at runtime. It is
+   all-or-nothing for the same reason the walk is: there is no way to tell which of the surviving
+   "unused" keys the failed files would have vouched for.
+
+The other categories are unaffected by either: `missing`, `dynamic` and `ambiguous` are still reported
+from whatever the scan did see.
 
 Published vendor views are scanned too. The default `i18n.scan.paths` includes `resource_path()`,
 which covers `resources/views/vendor/**` once a package's views are published there, so a translation
