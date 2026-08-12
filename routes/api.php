@@ -11,6 +11,7 @@ use Kurt\Modules\I18n\Http\Controllers\Api\JsonTranslationController;
 use Kurt\Modules\I18n\Http\Controllers\Api\LocaleController;
 use Kurt\Modules\I18n\Http\Controllers\Api\MissingKeyReportController;
 use Kurt\Modules\I18n\Http\Controllers\Api\PhpGroupController;
+use Kurt\Modules\I18n\Http\Controllers\Api\ScanReportController;
 use Kurt\Modules\I18n\Http\Controllers\Api\TranslateMissingController;
 use Kurt\Modules\I18n\Http\Controllers\Api\TranslationController;
 
@@ -36,6 +37,7 @@ Route::middleware([
 ])->group(function (): void {
     // Discovery.
     Route::get('catalog', CatalogController::class)->name('catalog');
+    Route::get('scan', ScanReportController::class)->name('scan');
     Route::get('groups', [GroupController::class, 'index'])->name('groups.index');
     Route::get('locales', [LocaleController::class, 'index'])->name('locales.index');
 

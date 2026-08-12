@@ -103,6 +103,7 @@ and response bodies are JSON.
 | Method & path                     | Purpose                                        |
 | --------------------------------- | ---------------------------------------------- |
 | `GET /api/i18n/catalog`           | List locales, JSON files, PHP groups, vendor packages. |
+| `GET /api/i18n/scan`              | Source-scan report: keys used in code vs. keys defined in files. |
 | `GET /api/i18n/groups`            | List every translation group as `{type, group}` pairs. |
 | `GET /api/i18n/locales`           | List the known locales.                        |
 | `GET /api/i18n/json`              | Read the JSON translation grid.                |
@@ -236,6 +237,102 @@ Only gaps are reported: a locale appears under a group only when it is missing a
 group is omitted entirely when every target is complete. A group whose file is absent for a locale
 surfaces as **all** the reference keys being missing for it. The same report is available in PHP via
 `Kurt\Modules\I18n\Support\MissingKeyReport::generate($reference, $targets = null)`.
+
+## Source scanning
+
+`GET /api/i18n/scan` answers a different question than the missing-key report above: not "what is
+one locale short of another" but "what does the code actually call, and does the catalogue line up
+with it." It walks the configured source paths for translation-function call sites and cross-checks
+every key it finds against the JSON and PHP files on disk, in one pass.
+
+- `locales` (optional, `a,b,c`, same convention as every other endpoint): the locales to check for
+  `missing` keys. Omitted or blank, it falls back to every locale on disk. This is deliberate: an
+  empty filter carries no information about which locales you meant, and answering it literally would
+  report an empty `missing` for a catalogue that may be full of gaps.
+- `refresh` (optional, boolean): flush the scan cache before running, so a truthy value (`1`, `true`)
+  forces every file to be re-read instead of reusing a cached result.
+
+```json
+{
+  "data": {
+    "locales": ["en", "tr"],
+    "missing": { "tr": ["users.title"] },
+    "unused": ["old.banner"],
+    "dynamic": [{ "file": "app/Http/Controllers/HomeController.php", "line": 42, "method": "__" }],
+    "ambiguous": [{ "key": "some.orphan.key", "file": "resources/views/home.blade.php", "line": 7 }],
+    "warnings": []
+  }
+}
+```
+
+The four categories answer different questions, so they are never merged into one list:
+
+- **`missing`**: keyed by locale (a locale is present only when it is missing at least one key), the
+  keys code calls literally that have no value in that locale's files.
+- **`unused`**: keys the catalogue defines that no scanned call site references. Locale-independent, so
+  a key only `en` has to lose is still "used" for every locale's purposes.
+- **`dynamic`**: call sites whose first argument was not a plain string literal (a variable, a
+  concatenation, an interpolated string), so the key could not be read at all. Nothing is guessed;
+  these are left for a human to check by hand.
+- **`ambiguous`**: a literal key that *was* read but matches no known store, meaning not a JSON key,
+  not `group.item` for any known PHP group, and not `package::group.item` for any known vendor group.
+  It is kept separate from `dynamic` because the difference matters to what you do next: a dynamic
+  call needs a human to read the code, an ambiguous key needs a human to decide where it belongs.
+
+`dynamic` and `ambiguous` are kept apart for the same reason: one means "could not be read," the other
+means "was read but fits nowhere," so conflating them would leave both unactionable.
+
+A key can appear in **both** `ambiguous` and `missing`. An ambiguous key is by definition not found in
+any store, so every requested locale reports it missing too. Both are true of it at once, and together
+they mean the key is *unplaceable*, not merely untranslated. Do not auto-create it in a file, since
+there is no evidence which file it belongs in.
+
+`config('i18n.scan.ignored_groups')` and `config('i18n.scan.ignored_keys')` suppress `unused` only.
+A key named by either config, or belonging to an ignored group, is never reported unused even if
+nothing calls it. Neither ever hides a key from `missing`: a key your code actually calls is reported
+missing regardless of any ignore list, because "the developer chose not to be told this key is
+unused" is not the same claim as "this key does not need translating."
+
+If a scan finds **zero literal call sites** at all, that is always a misconfiguration (most likely
+`i18n.scan.paths` pointing somewhere with no source in it), never a legitimate "nothing is used."
+Publishing an `unused` list built from zero usages would read as "delete your whole catalogue," so the
+report withholds `unused` (an empty list) and adds an entry to `warnings` instead, pointing at
+`i18n.scan.paths`.
+
+Published vendor views are scanned too. The default `i18n.scan.paths` includes `resource_path()`,
+which covers `resources/views/vendor/**` once a package's views are published there, so a translation
+call in a published vendor view is picked up like any other call site. Its `package::group.item` keys
+are reported `missing` until the consuming application publishes the matching lang files for that
+vendor namespace.
+
+The full `scan` config block, with its defaults:
+
+```php
+'scan' => [
+    'paths' => null,            // null resolves to [app_path(), resource_path()]
+    'excluded_paths' => null,   // null resolves to [base_path('vendor'), storage_path()]
+    'methods' => ['__', 'trans', 'trans_choice'],
+    'ignored_keys' => [],
+    'ignored_groups' => ['validation', 'passwords', 'auth', 'pagination'],
+    'cache' => true,
+    'cache_path' => null,       // null resolves to storage/framework/cache/i18n-scan.json
+],
+```
+
+- `paths`: the roots walked for call sites. `null` resolves to `[app_path(), resource_path()]`.
+- `excluded_paths`: roots skipped entirely (symlinks under a scanned root are never followed either,
+  regardless of this list). `null` resolves to `[base_path('vendor'), storage_path()]`.
+- `methods`: extra function/method names recognised as translation calls, on top of the built-in
+  `__`, `trans` and `trans_choice`.
+- `ignored_keys` / `ignored_groups`: see above, `unused` only, never `missing`.
+- `cache`: when `true`, scanned files are fingerprinted (path + mtime + size) so an unchanged file is
+  not re-tokenised on the next scan; the whole cache also keys itself on a hash of this `scan` config
+  block, so changing any of the settings above invalidates it automatically.
+- `cache_path`: where the cache file is written. `null` resolves to
+  `storage_path('framework/cache/i18n-scan.json')`.
+
+The same report is available in PHP via `Kurt\Modules\I18n\Support\ScanReport::generate($locales =
+null)`, and the cache can be cleared directly with `Kurt\Modules\I18n\Support\ScanCache::flush()`.
 
 ## Import / export
 
