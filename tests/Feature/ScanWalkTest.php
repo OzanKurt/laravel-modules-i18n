@@ -77,11 +77,13 @@ function scan_walk_make_unreadable(string $path): bool
 
 /**
  * Gives read permission back so the temporary directory can be removed.
+ *
+ * The deny entry has to go before the chmod, because on Windows `chmod` sets
+ * the read-only attribute that would otherwise keep `unlink` from working, and
+ * it cannot clear that attribute while the deny entry is still in the way.
  */
 function scan_walk_make_readable(string $path): void
 {
-    @chmod($path, 0644);
-
     if (DIRECTORY_SEPARATOR === '\\') {
         $user = (string) getenv('USERNAME');
 
@@ -90,7 +92,28 @@ function scan_walk_make_readable(string $path): void
         }
     }
 
+    @chmod($path, 0644);
     clearstatcache(true, $path);
+}
+
+/**
+ * Removes a directory link without touching whatever it points at.
+ */
+function scan_walk_unlink_directory(string $link): void
+{
+    if (is_link($link)) {
+        @unlink($link);
+    }
+
+    if (is_dir($link)) {
+        @rmdir($link);
+    }
+
+    clearstatcache();
+
+    if (is_dir($link) && DIRECTORY_SEPARATOR === '\\') {
+        @exec('cmd /c rmdir "'.str_replace('/', '\\', $link).'" 2>&1');
+    }
 }
 
 it('walks every php and blade file under the configured paths', function () {
@@ -130,6 +153,9 @@ it('never scans a file that resolves to somewhere outside the configured root', 
             ->and(scan_walk_keys())->toContain('inside.key')
             ->and(scan_walk_keys())->not->toContain('outside.key');
     } finally {
+        // The link goes first: a recursive delete that meets it while walking
+        // leaves it behind, and the whole temporary tree with it.
+        scan_walk_unlink_directory($base.'/root/linked');
         i18n_rrmdir($base);
     }
 });
@@ -179,15 +205,20 @@ it('excludes a path written with the separator the platform does not use', funct
 });
 
 it('reports a root it cannot walk as a warning and scans the rest', function () {
-    $missing = i18n_tmp_dir().'/nowhere';
+    $dir = i18n_tmp_dir();
+    $missing = $dir.'/nowhere';
 
     config()->set('i18n.scan.paths', [$missing, __DIR__.'/../Fixtures/scan-app']);
 
-    $result = app(SourceScanner::class)->scan();
-    $blamed = array_map(fn (array $warning): string => $warning['file'], $result['warnings']);
+    try {
+        $result = app(SourceScanner::class)->scan();
+        $blamed = array_map(fn (array $warning): string => $warning['file'], $result['warnings']);
 
-    expect(array_map(fn (Usage $u): string => $u->key, $result['usages']))->toContain('real.literal')
-        ->and(implode("\n", $blamed))->toContain('nowhere');
+        expect(array_map(fn (Usage $u): string => $u->key, $result['usages']))->toContain('real.literal')
+            ->and(implode("\n", $blamed))->toContain('nowhere');
+    } finally {
+        i18n_rrmdir($dir);
+    }
 });
 
 it('reports a file it cannot read as a warning and scans the rest', function () {
