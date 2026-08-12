@@ -10,6 +10,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use RuntimeException;
 use SplFileInfo;
 use Throwable;
 
@@ -85,11 +86,10 @@ class SourceScanner
         $warnings = [];
 
         foreach ($this->paths() as $root) {
-            if (! $this->files->isDirectory($root)) {
-                continue;
-            }
+            $walk = $this->filesUnder($root);
+            $warnings = [...$warnings, ...$walk['warnings']];
 
-            foreach ($this->filesUnder($root) as $file) {
+            foreach ($walk['files'] as $file) {
                 try {
                     $usages = [...$usages, ...$this->scanFile($file)];
                 } catch (Throwable $e) {
@@ -104,42 +104,75 @@ class SourceScanner
     }
 
     /**
-     * @return list<string>
+     * Every scannable file under one configured root, and what went wrong.
+     *
+     * A root that cannot be opened at all, or a walk that fails part way down
+     * because a directory below it is unreadable or has just been removed, is
+     * named in a warning rather than thrown: the roots after it still deserve
+     * a report, and a root the developer configured but that is not there is
+     * a configuration mistake worth being told about.
+     *
+     * @return array{files: list<string>, warnings: list<array{file: string, reason: string}>}
      */
     private function filesUnder(string $root): array
     {
-        $iterator = new RecursiveIteratorIterator(
-            // SKIP_DOTS keeps . and .. out; symlinks are not followed, so a
-            // link cannot walk us outside the configured root or loop forever.
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-        );
-
         $found = [];
+        $warnings = [];
 
-        /** @var SplFileInfo $file */
-        foreach ($iterator as $file) {
-            if (! $file->isFile() || $file->getExtension() !== 'php') {
-                continue;
+        try {
+            // SKIP_DOTS keeps . and .. out of the walk.
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            );
+
+            $canonicalRoot = realpath($root);
+
+            if ($canonicalRoot === false) {
+                throw new RuntimeException("Unable to resolve [{$root}].");
             }
 
-            $path = $file->getPathname();
+            /** @var SplFileInfo $file */
+            foreach ($iterator as $file) {
+                if (! $file->isFile() || $file->getExtension() !== 'php') {
+                    continue;
+                }
 
-            if ($this->isExcluded($path)) {
-                continue;
+                // Whether this walk steps into a symlink or a Windows junction
+                // is a platform question we do not have to answer. realpath()
+                // resolves links and `..` alike, so a file counts only when it
+                // really lives under the configured root; anything else is not
+                // ours to scan and is dropped without comment, since it is not
+                // a broken file, just a path outside the job.
+                $path = realpath($file->getPathname());
+
+                if ($path === false || ! $this->isInside($path, $canonicalRoot)) {
+                    continue;
+                }
+
+                if ($this->isExcluded($path)) {
+                    continue;
+                }
+
+                $found[] = $path;
             }
-
-            $found[] = $path;
+        } catch (Throwable $e) {
+            $warnings[] = ['file' => $root, 'reason' => $e->getMessage()];
         }
 
         sort($found);
 
-        return $found;
+        return ['files' => $found, 'warnings' => $warnings];
     }
 
     private function isExcluded(string $path): bool
     {
         foreach ($this->excludedPaths() as $excluded) {
-            if (str_starts_with($path, $excluded)) {
+            // A configured exclusion may be written with `..` or with the
+            // other platform's separator, so it is resolved the same way the
+            // scanned path was before the two are compared.
+            $resolved = realpath($excluded);
+
+            if ($this->isInside($path, $resolved === false ? $excluded : $resolved)) {
                 return true;
             }
         }
@@ -148,10 +181,40 @@ class SourceScanner
     }
 
     /**
+     * Is `$path` the directory `$root` itself or something below it?
+     *
+     * The comparison is on one separator, and it has to land on a path
+     * boundary: `vendor` covers `vendor/one.php` but never `vendor-tools`,
+     * which a plain prefix test would swallow.
+     */
+    private function isInside(string $path, string $root): bool
+    {
+        $path = $this->forwardSlashes($path);
+        $root = rtrim($this->forwardSlashes($root), '/');
+
+        return $path === $root || str_starts_with($path, $root.'/');
+    }
+
+    /** Windows hands back backslashes; config is as often written with slashes. */
+    private function forwardSlashes(string $path): string
+    {
+        return str_replace('\\', '/', $path);
+    }
+
+    /**
      * @return list<Usage>
      */
     public function scanFile(string $absolutePath): array
     {
+        // A file the process may not read comes back from file_get_contents()
+        // as false rather than as an exception, and false cast to a string is
+        // empty source: zero findings, nothing said. Raising it here makes the
+        // caller's catch record it as the gap it is. A missing file already
+        // throws on its own, so only readability needs asking about.
+        if (! $this->files->isReadable($absolutePath)) {
+            throw new RuntimeException("Unable to read [{$absolutePath}].");
+        }
+
         $source = (string) $this->files->get($absolutePath);
 
         // To PHP's tokeniser a Blade file is almost entirely inline HTML, so
