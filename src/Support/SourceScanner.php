@@ -127,9 +127,9 @@ class SourceScanner
                     // between reading a file and reporting what was in it:
                     // anything that went wrong there would land in the catch
                     // below and turn a file that scanned perfectly into a
-                    // warning with its keys thrown away. `put()` swallows its
-                    // own trouble as well, so neither half depends on the
-                    // other being got right.
+                    // warning with its keys thrown away. `put()` only records
+                    // in memory and `persist()` swallows its own trouble, so
+                    // neither half depends on the other being got right.
                     $usages = [...$usages, ...$found];
                     $this->cache->put($file, $mtime, $size, $found);
                 } catch (Throwable $e) {
@@ -139,6 +139,13 @@ class SourceScanner
                 }
             }
         }
+
+        // One write for the whole walk, rather than one per file: the cache
+        // holds every entry `put()` was given, so writing it as each entry
+        // arrives would re-encode the whole growing document thousands of times
+        // over. Files that failed do not change this; they simply have no entry
+        // to store, and the ones that succeeded still deserve caching.
+        $this->cache->persist();
 
         return ['usages' => $usages, 'warnings' => $warnings];
     }

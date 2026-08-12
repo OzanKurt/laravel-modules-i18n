@@ -17,6 +17,14 @@ use Throwable;
  * to `scan.methods` changes no file, so without it the new function would never
  * be scanned and the report would be quietly wrong.
  *
+ * The document is read from disk at most once and written at most once, both
+ * per instance. Doing either per file would make the cache quadratic in the
+ * number of files: every entry would re-parse and re-encode every entry before
+ * it, which past a few hundred files costs far more than tokenising the source
+ * the cache exists to avoid tokenising. An instance is scoped to one scan, so
+ * holding the document in memory for that long is safe. {@see persist()} is
+ * what puts it back, and {@see SourceScanner::scan()} is what calls it.
+ *
  * The cache is an optimisation, never a source of truth. Nothing it does may
  * change what a scan reports and no trouble it runs into may cost a real
  * result, so a cache file that cannot be read, does not parse, does not carry
@@ -37,6 +45,16 @@ class ScanCache
      */
     private const FORMAT = 1;
 
+    /**
+     * The decoded document, read on first use and held until {@see flush()}.
+     *
+     * @var array{version: int, config: string, files: array<array-key, mixed>}|null
+     */
+    private ?array $document = null;
+
+    /** Has an entry been stored since the document was last read or written? */
+    private bool $dirty = false;
+
     public function __construct(
         private readonly Repository $config,
         private readonly Filesystem $files,
@@ -47,11 +65,11 @@ class ScanCache
      */
     public function get(string $file, int $mtime, int $size): ?array
     {
-        if ($this->config->get('i18n.scan.cache', true) !== true) {
+        if (! $this->enabled()) {
             return null;
         }
 
-        $entry = $this->read()['files'][$file] ?? null;
+        $entry = $this->document()['files'][$file] ?? null;
 
         if (! is_array($entry) || ($entry['mtime'] ?? null) !== $mtime || ($entry['size'] ?? null) !== $size) {
             return null;
@@ -109,48 +127,85 @@ class ScanCache
     }
 
     /**
+     * Records one file's usages in memory. {@see persist()} is what stores them.
+     *
      * @param  list<Usage>  $usages
      */
     public function put(string $file, int $mtime, int $size, array $usages): void
     {
-        if ($this->config->get('i18n.scan.cache', true) !== true) {
+        if (! $this->enabled()) {
+            return;
+        }
+
+        $document = $this->document();
+        $document['files'][$file] = [
+            'mtime' => $mtime,
+            'size' => $size,
+            'usages' => array_map(static fn (Usage $u): array => [
+                'key' => $u->key,
+                'file' => $u->file,
+                'line' => $u->line,
+                'method' => $u->method,
+                'isLiteral' => $u->isLiteral,
+            ], $usages),
+        ];
+
+        $this->document = $document;
+        $this->dirty = true;
+    }
+
+    /**
+     * Writes everything {@see put()} was given, once.
+     *
+     * A cache directory that cannot be created, a disk with nothing left on it,
+     * or source that is not valid UTF-8 and so cannot be encoded: none of that
+     * says anything about the scan that just succeeded. The write is abandoned
+     * and the caller is never told, because there is nothing for it to do about
+     * it. The caller having already banked its findings is what keeps the
+     * result safe; refusing to throw is what keeps it safe when a later caller
+     * stops doing that, and it matters more here than it did per file, because
+     * this runs outside the walk's own per-file catch.
+     */
+    public function persist(): void
+    {
+        if (! $this->enabled() || ! $this->dirty) {
+            return;
+        }
+
+        $document = $this->document;
+        $this->dirty = false;
+
+        if ($document === null) {
             return;
         }
 
         try {
-            $data = $this->read();
-            $data['files'][$file] = [
-                'mtime' => $mtime,
-                'size' => $size,
-                'usages' => array_map(static fn (Usage $u): array => [
-                    'key' => $u->key,
-                    'file' => $u->file,
-                    'line' => $u->line,
-                    'method' => $u->method,
-                    'isLiteral' => $u->isLiteral,
-                ], $usages),
-            ];
-
-            $this->write($data);
+            $path = $this->path();
+            $this->files->ensureDirectoryExists(dirname($path));
+            $this->files->put($path, json_encode($document, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
         } catch (Throwable) {
-            // A cache directory that cannot be created, a disk with nothing
-            // left on it, or source that is not valid UTF-8 and so cannot be
-            // encoded: none of that says anything about the scan that just
-            // succeeded. Caching this entry is abandoned and the caller is
-            // never told, because there is nothing for it to do about it. The
-            // caller merging its findings before calling this is what keeps
-            // the result safe; refusing to throw is what keeps it safe when a
-            // later caller stops doing that.
+            // See the note above: a failed write costs the next run a rescan
+            // and this run nothing at all.
         }
     }
 
     public function flush(): void
     {
+        // The in-memory copy goes with the file, and the dirty flag with it, so
+        // a later persist() cannot put back what was just deleted.
+        $this->document = null;
+        $this->dirty = false;
+
         $path = $this->path();
 
         if ($this->files->exists($path)) {
             $this->files->delete($path);
         }
+    }
+
+    private function enabled(): bool
+    {
+        return $this->config->get('i18n.scan.cache', true) === true;
     }
 
     private function path(): string
@@ -167,6 +222,16 @@ class ScanCache
     }
 
     /**
+     * The decoded document, read from disk the first time it is asked for.
+     *
+     * @return array{version: int, config: string, files: array<array-key, mixed>}
+     */
+    private function document(): array
+    {
+        return $this->document ??= $this->read();
+    }
+
+    /**
      * The stored entries, or an empty set whenever they cannot be trusted.
      *
      * Only the envelope is settled here: that the file parses, was written by
@@ -180,7 +245,8 @@ class ScanCache
      */
     private function read(): array
     {
-        $empty = ['version' => self::FORMAT, 'config' => $this->fingerprint(), 'files' => []];
+        $fingerprint = $this->fingerprint();
+        $empty = ['version' => self::FORMAT, 'config' => $fingerprint, 'files' => []];
         $path = $this->path();
 
         if (! $this->files->exists($path)) {
@@ -197,7 +263,7 @@ class ScanCache
             return $empty;
         }
 
-        if (($decoded['config'] ?? null) !== $this->fingerprint()) {
+        if (($decoded['config'] ?? null) !== $fingerprint) {
             return $empty;
         }
 
@@ -207,16 +273,6 @@ class ScanCache
             return $empty;
         }
 
-        return ['version' => self::FORMAT, 'config' => $this->fingerprint(), 'files' => $files];
-    }
-
-    /**
-     * @param  array{version: int, config: string, files: array<array-key, mixed>}  $data
-     */
-    private function write(array $data): void
-    {
-        $path = $this->path();
-        $this->files->ensureDirectoryExists(dirname($path));
-        $this->files->put($path, json_encode($data, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+        return ['version' => self::FORMAT, 'config' => $fingerprint, 'files' => $files];
     }
 }
