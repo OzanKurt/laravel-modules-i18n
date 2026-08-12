@@ -88,11 +88,15 @@ final readonly class KeyResolver
             return $this->result('ambiguous');
         }
 
-        [$group, $item] = explode('.', $rest, 2);
-
         foreach ($this->catalog->vendor as $vendor) {
-            if ($vendor['name'] === $package && in_array($group, $vendor['groups'], true)) {
-                return $this->result('vendor', group: $group, item: $item, package: $package);
+            if ($vendor['name'] !== $package) {
+                continue;
+            }
+
+            foreach ($this->groupCandidates($rest) as [$group, $item]) {
+                if (in_array($group, $vendor['groups'], true)) {
+                    return $this->result('vendor', group: $group, item: $item, package: $package);
+                }
             }
         }
 

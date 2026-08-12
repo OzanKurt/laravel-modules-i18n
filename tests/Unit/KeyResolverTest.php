@@ -11,7 +11,10 @@ function resolver(array $jsonKeys = []): KeyResolver
         locales: ['en', 'tr'],
         jsonLocales: ['en'],
         phpGroups: ['auth', 'admin/users'],
-        vendor: [['name' => 'somepkg', 'locales' => ['en'], 'groups' => ['messages']]],
+        vendor: [
+            ['name' => 'somepkg', 'locales' => ['en'], 'groups' => ['messages']],
+            ['name' => 'dotpkg', 'locales' => ['en'], 'groups' => ['a.b']],
+        ],
     );
 
     return new KeyResolver($catalog, fn (string $key): bool => in_array($key, $jsonKeys, true));
@@ -46,4 +49,13 @@ it('reports a dotted key with no matching group and no json entry as ambiguous',
 
 it('reports an unknown vendor package as ambiguous', function () {
     expect(resolver()->resolve('nopkg::messages.hello')['store'])->toBe('ambiguous');
+});
+
+it('resolves a vendor group whose name contains a dot by walking candidates longest prefix first', function () {
+    expect(resolver()->resolve('dotpkg::a.b.item'))
+        ->toBe(['store' => 'vendor', 'group' => 'a.b', 'item' => 'item', 'package' => 'dotpkg']);
+});
+
+it('reports a known vendor package addressed with a group it does not have as ambiguous', function () {
+    expect(resolver()->resolve('somepkg::nogroup.hello')['store'])->toBe('ambiguous');
 });
