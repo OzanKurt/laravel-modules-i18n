@@ -85,8 +85,35 @@ it('carries scanner warnings through to the report', function () {
 
     $report = app(ScanReport::class)->generate();
 
+    // The fixtures live outside the application root, so this also pins the
+    // fallback: a path that cannot be written against `base_path()` is
+    // reported absolute rather than made to climb out of the root.
     expect(array_column($report['warnings'], 'file'))
         ->toContain(realpath(__DIR__.'/../Fixtures/scan-app/Broken.php'));
+});
+
+it('reports paths relative to the application root', function () {
+    $dir = base_path('i18n-scan-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0777, true);
+    file_put_contents($dir.'/Dynamic.php', "<?php\n\n\$key = 'a.key';\n__(\$key);\n");
+    file_put_contents($dir.'/Broken.php', "<?php\n\nclass {\n");
+
+    config()->set('i18n.scan.paths', [$dir]);
+    config()->set('i18n.scan.excluded_paths', []);
+
+    $relative = str_replace('\\', '/', substr($dir, strlen(base_path()) + 1));
+
+    try {
+        // A UI wants "app/Http/Controllers/HomeController.php", and an endpoint
+        // any reader can call should not be publishing the server's deployment
+        // layout either.
+        $report = app(ScanReport::class)->generate();
+
+        expect(array_column($report['dynamic'], 'file'))->toBe([$relative.'/Dynamic.php'])
+            ->and(array_column($report['warnings'], 'file'))->toContain($relative.'/Broken.php');
+    } finally {
+        i18n_rrmdir($dir);
+    }
 });
 
 it('withholds unused and warns when any file failed to scan', function () {

@@ -284,6 +284,10 @@ The four categories answer different questions, so they are never merged into on
 `dynamic` and `ambiguous` are kept apart for the same reason: one means "could not be read," the other
 means "was read but fits nowhere," so conflating them would leave both unactionable.
 
+Every `file` in `dynamic`, `ambiguous` and `warnings` is written relative to the application root
+(`base_path()`), as in the example above. A file that genuinely lives outside the root keeps its
+absolute path, since a relative one would only have to climb back out.
+
 A key can appear in **both** `ambiguous` and `missing`. An ambiguous key is by definition not found in
 any store, so every requested locale reports it missing too. Both are true of it at once, and together
 they mean the key is *unplaceable*, not merely untranslated. Do not auto-create it in a file, since

@@ -191,9 +191,39 @@ class ScanReport
             'locales' => $locales,
             'missing' => $missing,
             'unused' => $unused,
-            'dynamic' => $dynamic,
-            'ambiguous' => $ambiguous,
-            'warnings' => $warnings,
+            'dynamic' => array_map(fn (array $row): array => [...$row, 'file' => $this->relative($row['file'])], $dynamic),
+            'ambiguous' => array_map(fn (array $row): array => [...$row, 'file' => $this->relative($row['file'])], $ambiguous),
+            'warnings' => array_map(fn (array $row): array => [...$row, 'file' => $this->relative($row['file'])], $warnings),
         ];
+    }
+
+    /**
+     * A reported path, written against the application root where it can be.
+     *
+     * The scanner works in absolute paths because that is the only way to
+     * decide containment, but a report is read by a human or a UI, and
+     * "app/Http/Controllers/HomeController.php" is what either wants. It also
+     * keeps the endpoint from publishing the server's deployment layout to
+     * everyone allowed to read a scan.
+     *
+     * A file genuinely outside the base path keeps its absolute form, because a
+     * relative path that has to climb out of the root would be worse than no
+     * relativising at all. The empty string is what the report's own warnings
+     * carry when they blame no file in particular.
+     */
+    private function relative(string $path): string
+    {
+        if ($path === '') {
+            return $path;
+        }
+
+        $base = rtrim(str_replace('\\', '/', base_path()), '/');
+        $normalised = str_replace('\\', '/', $path);
+
+        if ($base !== '' && str_starts_with($normalised, $base.'/')) {
+            return substr($normalised, strlen($base) + 1);
+        }
+
+        return $path;
     }
 }
