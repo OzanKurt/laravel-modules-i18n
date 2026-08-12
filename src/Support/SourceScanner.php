@@ -6,6 +6,7 @@ namespace Kurt\Modules\I18n\Support;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Blade;
 
 /**
  * Finds translation call sites in source.
@@ -53,6 +54,14 @@ class SourceScanner
     public function scanFile(string $absolutePath): array
     {
         $source = (string) $this->files->get($absolutePath);
+
+        // To PHP's tokeniser a Blade file is almost entirely inline HTML, so
+        // `{{ __('x') }}` is never seen. Compiling first turns every directive
+        // and echo into real PHP, which also means Laravel's own compiler
+        // decides what a directive means instead of us maintaining a list.
+        if (str_ends_with($absolutePath, '.blade.php')) {
+            $source = Blade::compileString($source);
+        }
 
         return $this->tokenize($source, $absolutePath);
     }
