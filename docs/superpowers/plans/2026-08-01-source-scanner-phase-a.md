@@ -1576,11 +1576,15 @@ git commit -m "feat: assemble the four-category scan report"
 declare(strict_types=1);
 
 beforeEach(function () {
+    // Routes are registered in packageBooted(), which Testbench runs during
+    // setUp(), before this closure. Changing http.mode or auth_middleware here
+    // cannot affect middleware already baked into a registered route, so the
+    // test authenticates the way every other API test in this suite does.
+    $this->actingAs(i18n_actor());
+
     config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-app']);
     config()->set('i18n.scan.excluded_paths', []);
     config()->set('i18n.scan.cache', false);
-    config()->set('i18n.http.mode', 'api');
-    config()->set('i18n.http.auth_middleware', []);
 });
 
 it('returns the four categories', function () {
@@ -1590,7 +1594,9 @@ it('returns the four categories', function () {
 });
 
 it('honours a locale filter', function () {
-    $this->getJson('api/i18n/scan?locales[]=en')
+    // ApiController::optionalLocalesFromRequest() reads a comma-separated
+    // string, which is the dialect every other route in this package speaks.
+    $this->getJson('api/i18n/scan?locales=en')
         ->assertOk()
         ->assertJsonPath('data.locales', ['en']);
 });
@@ -1662,7 +1668,7 @@ Expected: all pass.
 
 - [ ] **Step 7: Document it in the README**
 
-Add a `## Source scanning` section covering: what the endpoint is (`GET api/i18n/scan`, with `locales[]` and `refresh` query parameters), what the four categories mean, that `ignored_groups` and `ignored_keys` affect `unused` only and never hide a `missing` key, that a scan finding zero usages withholds `unused` and returns a warning instead, and the full `scan` config block with its defaults. Verify every name you write against the code before committing.
+Add a `## Source scanning` section covering: what the endpoint is (`GET api/i18n/scan`, with comma-separated `locales` and a `refresh` query parameter), what the four categories mean, that `ignored_groups` and `ignored_keys` affect `unused` only and never hide a `missing` key, that a scan finding zero usages withholds `unused` and returns a warning instead, and the full `scan` config block with its defaults. Verify every name you write against the code before committing.
 
 - [ ] **Step 8: Commit**
 
