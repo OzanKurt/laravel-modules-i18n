@@ -378,6 +378,52 @@ The full `scan` config block, with its defaults:
 The same report is available in PHP via `Kurt\Modules\I18n\Support\ScanReport::generate($locales =
 null)`, and the cache can be cleared directly with `Kurt\Modules\I18n\Support\ScanCache::flush()`.
 
+### The scan command
+
+`php artisan i18n:scan` runs the same scan from the CLI, so CI can gate on it without a web server or
+authentication (`enabled_environments` gates the HTTP endpoints, not this command, so it runs the same
+way under `testing` as anywhere else):
+
+```bash
+php artisan i18n:scan
+php artisan i18n:scan --only=missing --fail
+```
+
+Flags:
+
+- `--only` (comma-separated `missing`, `unused`, `dynamic`, `ambiguous`; default: all four) — narrows
+  which tables are printed and which categories `--fail` gates on. It has **no effect on `--format=json`**:
+  the JSON output always emits the whole report, unchanged, so it stays identical to what
+  `GET /api/i18n/report/scan` returns. `--format=json --only=missing` still narrows the exit code, just
+  not what gets printed.
+- `--locales` (comma-separated, same convention as the endpoint's `locales` parameter) — restricts
+  which locales `missing` is checked against. Omitted, it falls back to every locale on disk.
+- `--format` (`table` default, or `json`) — `table` prints one section per requested category plus a
+  `warnings` table when the scan produced any; `json` prints the full report as pretty-printed JSON.
+- `--fail` — makes the command exit non-zero when a gated category holds findings. It **ignores
+  `dynamic`** unless `dynamic` is explicitly named in `--only`, because dynamic call sites (`__($key)`)
+  are a legitimate pattern present in almost every codebase and would fail every project's first run.
+- `--refresh` — flushes the scan cache before running, so every file is re-read instead of reusing a
+  cached result.
+
+Exit codes:
+
+- `0` — clean run (or `--fail` was not given).
+- `1` — `--fail` was given and a gated category holds findings.
+- `2` — the scan was incomplete (some file failed to parse) **and** `unused` was requested, so `unused`
+  was withheld. This is not "unused keys were found"; it means the run cannot be trusted enough to
+  answer that question, and it wins even when `--fail` would also have exited `1`. A bare
+  `php artisan i18n:scan` requests all four categories, so a single unparseable file is enough to exit
+  `2` on an otherwise informational run, with no `--fail` involved.
+- `64` — usage error: an unknown `--format`, an unknown `--only` category, or an `--only` that names no
+  category at all (e.g. `--only=,`).
+
+A copy-pasteable CI line:
+
+```bash
+php artisan i18n:scan --only=missing --fail
+```
+
 ## Import / export
 
 Export and import a locale's translations as flat `key,value` rows (nested PHP keys are dot-paths,

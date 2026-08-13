@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Kurt\Modules\I18n\Support\ScanReport;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
 beforeEach(function () {
@@ -110,4 +111,16 @@ it('deduplicates a repeated locale', function () {
 
     expect($exit)->toBe(0)
         ->and($report['locales'])->toBe(['en']);
+});
+
+it('emits json identical to what the report returns', function () {
+    withoutBrokenFixture();
+
+    $expected = app(ScanReport::class)->generate();
+
+    Artisan::call('i18n:scan', ['--format' => 'json']);
+
+    $printed = json_decode(trim(Artisan::output()), true);
+
+    expect($printed)->toBe($expected);
 });
