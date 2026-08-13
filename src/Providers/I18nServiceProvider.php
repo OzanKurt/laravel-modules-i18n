@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Route;
 use Kurt\Modules\Core\Http\HttpMode;
 use Kurt\Modules\Core\Modules\ModuleManifest;
 use Kurt\Modules\Core\Providers\PackageServiceProvider;
+use Kurt\Modules\I18n\Console\Commands\ScanCommand;
 use Kurt\Modules\I18n\Contracts\Translator;
 use Kurt\Modules\I18n\Http\Middleware\Authorize;
 use Kurt\Modules\I18n\Support\ArrayExporter;
@@ -40,7 +41,10 @@ final class I18nServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-modules-i18n')
             ->hasConfigFile('i18n')
-            ->hasTranslations();
+            ->hasTranslations()
+            ->hasCommands([
+                ScanCommand::class,
+            ]);
     }
 
     public function packageRegistered(): void
