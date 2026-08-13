@@ -19,6 +19,9 @@ use Kurt\Modules\I18n\Enums\FileType;
  */
 final readonly class ScanReport
 {
+    /** The warning a walk that read no literal call site at all carries. */
+    public const NO_USAGES_WARNING = 'No literal translation calls were found; check i18n.scan.paths.';
+
     public function __construct(
         private SourceScanner $scanner,
         private TranslationManager $manager,
@@ -96,7 +99,7 @@ final readonly class ScanReport
             // Zero literal usages is always misconfiguration, never truth, and
             // publishing "everything is unused" invites someone to delete their
             // whole catalogue.
-            $warnings[] = ['file' => '', 'reason' => 'No literal translation calls were found; check i18n.scan.paths.'];
+            $warnings[] = ['file' => '', 'reason' => self::NO_USAGES_WARNING];
 
             return $this->result($locales, $missing, [], $dynamic, $ambiguous, $warnings);
         }

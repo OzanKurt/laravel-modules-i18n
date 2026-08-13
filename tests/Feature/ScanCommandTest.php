@@ -39,6 +39,17 @@ it('exits 2 and withholds unused when the scan is incomplete', function () {
         ->assertExitCode(2);
 });
 
+it('exits 2 when the walk found no literal calls at all, whatever --only asked for', function () {
+    // A scan that read zero call sites cannot vouch for any category, not just
+    // `unused`: `missing` is empty because nothing was read, not because
+    // nothing is missing. Unlike the withheld-unused rule this one cannot be
+    // narrowed away, or a team that moves app/ after publishing the config
+    // keeps a permanently green gate that checks nothing.
+    config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/does-not-exist']);
+
+    $this->artisan('i18n:scan --only=missing --fail')->assertExitCode(2);
+});
+
 it('exits 0 for missing even when the scan is incomplete', function () {
     $this->artisan('i18n:scan --only=missing')->assertExitCode(0);
 });

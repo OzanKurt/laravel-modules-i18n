@@ -175,6 +175,16 @@ final class ScanCommand extends Command
      */
     private function exitCode(array $result, array $categories, bool $onlyGiven): int
     {
+        // Zero literal call sites is the strongest form of a scan that cannot
+        // vouch for its walk: it makes every category vacuous, not only
+        // `unused`, since `missing` came back empty because nothing was read
+        // rather than because nothing is missing. So unlike the rule below,
+        // --only cannot narrow this one away and leave a green gate behind.
+        // ScanReport decides the condition; this only reads its verdict.
+        if (in_array(ScanReport::NO_USAGES_WARNING, array_column($result['warnings'], 'reason'), true)) {
+            return self::EXIT_INCOMPLETE;
+        }
+
         // An incomplete scan outranks a finding: the findings themselves came
         // from a walk with known gaps, so blaming them would overstate the run.
         if (in_array('unused', $categories, true) && $result['warnings'] !== []) {
