@@ -75,7 +75,7 @@ singular `hasCommand` on this version of the package.
 |---|---|
 | `src/Support/ScanOutputFormatter.php` | Pure: a report plus selected categories to table rows or a JSON string |
 | `src/Console/Commands/ScanCommand.php` | Parse flags, call `ScanReport`, print, choose the exit code |
-| `src/Providers/I18nServiceProvider.php` | One `->hasCommand(...)` line |
+| `src/Providers/I18nServiceProvider.php` | One `->hasCommands([...])` line |
 | `README.md`, `CHANGELOG.md` | Document the command |
 
 ---
