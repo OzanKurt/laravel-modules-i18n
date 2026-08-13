@@ -400,23 +400,11 @@ it('rejects an unknown category', function () {
 it('rejects a malformed locale', function () {
     $this->artisan('i18n:scan --locales=../etc')->assertExitCode(64);
 });
-
-it('emits json identical to the report', function () {
-    withoutBrokenFixture();
-
-    $expected = app(ScanReport::class)->generate();
-
-    $this->artisan('i18n:scan --format=json --only=missing');
-
-    // Compare against the same generate() call the command makes; the command
-    // must add no wrapper and drop no key.
-    expect(array_keys($expected))
-        ->toBe(['locales', 'missing', 'unused', 'dynamic', 'ambiguous', 'warnings']);
-})->todo('asserted through the artisan output buffer in step 3');
 ```
 
-Note the final test is marked `todo` on purpose: asserting the exact JSON needs
-the command's output buffer, which Step 3 wires up. It is completed in Task 3.
+JSON parity is not tested here. It needs the command's output buffer and is the
+one assertion that keeps the CLI and the HTTP endpoint from drifting apart, so
+it gets its own task rather than a placeholder that asserts nothing.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -675,9 +663,9 @@ endpoint from drifting apart, and it needs the command's real output buffer.
 - Consumes: everything from Tasks 1 and 2.
 - Produces: no new code surface.
 
-- [ ] **Step 1: Replace the todo test with a real one**
+- [ ] **Step 1: Add the JSON parity test**
 
-In `tests/Feature/ScanCommandTest.php`, replace the final `todo` test with:
+Append to `tests/Feature/ScanCommandTest.php`:
 
 ```php
 it('emits json identical to what the report returns', function () {
@@ -769,9 +757,10 @@ recorded so they are not mistaken for gaps:
   does this and returns `[]` plus a warning. The command's only job is to turn
   that state into exit code `2`, which Task 2 does.
 
-**Placeholder scan.** No TBD or TODO entries. One test is deliberately marked
-`todo` at the end of Task 2 and completed in Task 3; that is a Pest feature used
-knowingly, with the reason stated in both places, not an unfinished plan step.
+**Placeholder scan.** No TBD or TODO entries, and no placeholder test. An
+earlier draft parked a `todo` test at the end of Task 2 and completed it in
+Task 3; it asserted nothing in the meantime, so it was removed and JSON parity
+is simply introduced in Task 3 where it belongs.
 
 **Type consistency.** `ScanOutputFormatter::sections()` returns
 `list<array{title, headers, rows}>` in Task 1 and is consumed with exactly those
