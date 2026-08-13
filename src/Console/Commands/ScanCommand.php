@@ -9,6 +9,7 @@ use Kurt\Modules\I18n\Support\LangPaths;
 use Kurt\Modules\I18n\Support\ScanCache;
 use Kurt\Modules\I18n\Support\ScanOutputFormatter;
 use Kurt\Modules\I18n\Support\ScanReport;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Read-only report of how source code lines up with the translation files.
@@ -84,7 +85,11 @@ final class ScanCommand extends Command
         $result = $report->generate($locales);
 
         if ($format === 'json') {
-            $this->line(ScanOutputFormatter::json($result));
+            // Raw, because the payload has to reach the terminal exactly as it
+            // was encoded: line() hands it to Symfony's output formatter, which
+            // reads any markup inside a translation key as its own and either
+            // rewrites the key or, on a colour it cannot build, throws.
+            $this->output->writeln(ScanOutputFormatter::json($result), OutputInterface::OUTPUT_RAW);
         } else {
             $this->renderTables($result, $categories);
         }
@@ -157,19 +162,10 @@ final class ScanCommand extends Command
      */
     private function renderTables(array $result, array $categories): void
     {
-        foreach (ScanOutputFormatter::sections($result, $categories) as $section) {
+        foreach (ScanOutputFormatter::tableSections($result, $categories) as $section) {
             $this->newLine();
             $this->line($section['title']);
             $this->table($section['headers'], $section['rows']);
-        }
-
-        if ($result['warnings'] !== []) {
-            $this->newLine();
-            $this->line('warnings');
-            $this->table(
-                ['file', 'reason'],
-                array_map(static fn (array $w): array => [$w['file'], $w['reason']], $result['warnings']),
-            );
         }
     }
 

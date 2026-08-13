@@ -19,6 +19,16 @@ function withoutBrokenFixture(): void
     config()->set('i18n.scan.excluded_paths', [__DIR__.'/../Fixtures/scan-app/Broken.php']);
 }
 
+/**
+ * Point the scan at the tree whose translation keys contain console markup,
+ * with a catalogue of its own so the run has exactly one locale and no warning.
+ */
+function withMarkupFixture(): void
+{
+    app()->instance(TranslationManager::class, i18n_manager(__DIR__.'/../Fixtures/scan-dynamic-lang'));
+    config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-markup']);
+}
+
 it('exits 2 and withholds unused when the scan is incomplete', function () {
     // An exact-line expectation, not a substring one: the withheld-unused
     // warning the command prints to explain the exit code says the word
@@ -123,4 +133,43 @@ it('emits json identical to what the report returns', function () {
     $printed = json_decode(trim(Artisan::output()), true);
 
     expect($printed)->toBe($expected);
+});
+
+it('emits a key that contains console markup unchanged in json', function () {
+    // Everything the command writes through line() is parsed by Symfony's
+    // output formatter, and a translation key is free to contain angle
+    // brackets. If the formatter gets to the payload it silently rewrites the
+    // key, and the printed JSON stops matching the report every other consumer
+    // reads: the one invariant the JSON format exists to hold.
+    withMarkupFixture();
+
+    $expected = app(ScanReport::class)->generate();
+
+    Artisan::call('i18n:scan', ['--format' => 'json']);
+
+    $printed = json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($printed)->toBe($expected)
+        ->and(array_column($printed['missing']['en'], 'key'))
+        ->toContain('Press <info>enter</info> to continue');
+});
+
+it('prints a key that contains console markup literally in a table', function () {
+    withMarkupFixture();
+
+    // Not merely "does not crash": a rewritten key in the table is a key
+    // nobody can grep for in their own source, which is what the table is for.
+    $this->artisan('i18n:scan')
+        ->expectsOutputToContain('Press <info>enter</info> to continue')
+        ->assertExitCode(0);
+});
+
+it('survives a key whose markup names a colour the formatter does not know', function () {
+    // "<fg=chartreuse>" is not a style Symfony can build, and an unbuildable
+    // style is an uncaught InvalidArgumentException, not a stripped tag. No
+    // flag is involved: a CI job gets a stack trace instead of a report.
+    withMarkupFixture();
+
+    $this->artisan('i18n:scan')->assertExitCode(0);
+    $this->artisan('i18n:scan --format=json')->assertExitCode(0);
 });

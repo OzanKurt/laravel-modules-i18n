@@ -114,6 +114,32 @@ it('only renders the categories it was asked for', function () {
     expect(array_column(ScanOutputFormatter::sections($report, ['unused']), 'title'))->toBe(['unused']);
 });
 
+it('escapes console markup in a table cell but leaves the raw section alone', function () {
+    // A key is free to contain angle brackets. Symfony's output formatter reads
+    // them as markup, so a table cell has to be escaped on the way out, while
+    // the raw sections stay the report's own strings for any other consumer.
+    $report = emptyReport(['missing' => [
+        'en' => [['key' => 'Press <info>enter</info> to continue', 'store' => 'json', 'group' => null, 'package' => null]],
+    ]]);
+
+    expect(ScanOutputFormatter::tableSections($report, ['missing'])[0]['rows'][0][0])
+        ->toBe('Press \<info\>enter\</info\> to continue')
+        ->and(ScanOutputFormatter::sections($report, ['missing'])[0]['rows'][0][0])
+        ->toBe('Press <info>enter</info> to continue');
+});
+
+it('appends the warnings section to the table sections', function () {
+    // The warnings table is part of the printed output, so it goes through the
+    // same escaper rather than being assembled by whoever prints it.
+    $report = emptyReport(['warnings' => [['file' => 'app/<Weird>.php', 'reason' => 'Broken']]]);
+
+    $sections = ScanOutputFormatter::tableSections($report, ScanOutputFormatter::CATEGORIES);
+
+    expect($sections)->toHaveCount(1)
+        ->and($sections[0]['title'])->toBe('warnings')
+        ->and($sections[0]['rows'])->toBe([['app/\<Weird\>.php', 'Broken']]);
+});
+
 it('encodes the report as json without a wrapper', function () {
     $report = emptyReport(['unused' => ['a.b']]);
 

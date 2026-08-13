@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Kurt\Modules\I18n\Support;
 
+use Symfony\Component\Console\Formatter\OutputFormatter;
+
 /**
  * Turns a scan report into something printable.
  *
@@ -85,6 +87,57 @@ final class ScanOutputFormatter
         }
 
         return $sections;
+    }
+
+    /**
+     * The same sections, plus warnings, ready to hand to a console table.
+     *
+     * Escaping lives here rather than in the command because a translation key
+     * is free to contain angle brackets and Symfony's output formatter reads
+     * them as markup: `<info>` is a style it applies and strips, so the key
+     * printed stops being the key in the source, and `<fg=chartreuse>` is a
+     * colour it cannot build, which is an uncaught exception rather than a
+     * stripped tag. Anything that prints a key or a value through this class
+     * inherits the fix instead of rediscovering the bug.
+     *
+     * @param  Report  $report
+     * @param  list<string>  $categories
+     * @return list<Section>
+     */
+    public static function tableSections(array $report, array $categories): array
+    {
+        $sections = self::sections($report, $categories);
+
+        if ($report['warnings'] !== []) {
+            $sections[] = [
+                'title' => 'warnings',
+                'headers' => ['file', 'reason'],
+                'rows' => array_map(
+                    static fn (array $w): array => [$w['file'], $w['reason']],
+                    $report['warnings'],
+                ),
+            ];
+        }
+
+        return array_map(
+            static fn (array $section): array => [
+                'title' => self::escape($section['title']),
+                'headers' => $section['headers'],
+                'rows' => array_map(
+                    static fn (array $row): array => array_map(self::escape(...), $row),
+                    $section['rows'],
+                ),
+            ],
+            $sections,
+        );
+    }
+
+    /**
+     * Render markup in `$value` literally instead of interpreting it.
+     */
+    public static function escape(string $value): string
+    {
+        return OutputFormatter::escape($value);
     }
 
     private static function groupCell(?string $group, ?string $package): string
