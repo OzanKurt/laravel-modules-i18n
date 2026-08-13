@@ -9,6 +9,7 @@
     "illuminate/contracts": "^13.0",
     "illuminate/filesystem": "^13.0",
     "illuminate/support": "^13.0",
+    "illuminate/view": "^13.0",
     "ozankurt/laravel-modules-core": "^2.0",
     "spatie/laravel-package-tools": "^1.93"
   },

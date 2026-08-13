@@ -11,6 +11,7 @@ use Kurt\Modules\I18n\Http\Controllers\Api\JsonTranslationController;
 use Kurt\Modules\I18n\Http\Controllers\Api\LocaleController;
 use Kurt\Modules\I18n\Http\Controllers\Api\MissingKeyReportController;
 use Kurt\Modules\I18n\Http\Controllers\Api\PhpGroupController;
+use Kurt\Modules\I18n\Http\Controllers\Api\ScanReportController;
 use Kurt\Modules\I18n\Http\Controllers\Api\TranslateMissingController;
 use Kurt\Modules\I18n\Http\Controllers\Api\TranslationController;
 
@@ -55,8 +56,11 @@ Route::middleware([
     // Locale creation.
     Route::post('locales', [LocaleController::class, 'store'])->name('locales.store');
 
-    // Reporting.
+    // Reporting. Both of these scan every group in one pass and compute an
+    // answer, which is what sets them apart from the discovery endpoints
+    // above: those only list what already exists.
     Route::get('report/missing', MissingKeyReportController::class)->name('report.missing');
+    Route::get('report/scan', ScanReportController::class)->name('report.scan');
 
     // Portable import / export + machine translation.
     Route::get('export', ExportController::class)->name('export');
