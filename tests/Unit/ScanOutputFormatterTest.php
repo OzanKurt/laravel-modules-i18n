@@ -44,6 +44,33 @@ it('renders a null group as a dash', function () {
         ->toBe([['Welcome', 'json', '-']]);
 });
 
+it('renders a vendor missing key group cell as package::group', function () {
+    $report = emptyReport(['missing' => [
+        'en' => [['key' => 'somepkg::messages.hello', 'store' => 'vendor', 'group' => 'messages', 'package' => 'somepkg']],
+    ]]);
+
+    expect(ScanOutputFormatter::sections($report, ['missing'])[0]['rows'])
+        ->toBe([['somepkg::messages.hello', 'vendor', 'somepkg::messages']]);
+});
+
+it('renders a project group key group cell as the plain group name', function () {
+    $report = emptyReport(['missing' => [
+        'en' => [['key' => 'auth.failed', 'store' => 'group', 'group' => 'auth', 'package' => null]],
+    ]]);
+
+    expect(ScanOutputFormatter::sections($report, ['missing'])[0]['rows'])
+        ->toBe([['auth.failed', 'group', 'auth']]);
+});
+
+it('renders a json-store key with a null group as a dash', function () {
+    $report = emptyReport(['missing' => [
+        'en' => [['key' => 'Welcome', 'store' => 'json', 'group' => null, 'package' => null]],
+    ]]);
+
+    expect(ScanOutputFormatter::sections($report, ['missing'])[0]['rows'])
+        ->toBe([['Welcome', 'json', '-']]);
+});
+
 it('marks an ambiguous missing key so it is not auto-created', function () {
     $report = emptyReport(['missing' => [
         'en' => [['key' => 'billing.sent', 'store' => 'ambiguous', 'group' => null, 'package' => null]],

@@ -47,7 +47,7 @@ final class ScanOutputFormatter
                     'title' => "missing ({$locale})",
                     'headers' => ['key', 'store', 'group'],
                     'rows' => array_map(
-                        static fn (array $k): array => [$k['key'], $k['store'], $k['group'] ?? '-'],
+                        static fn (array $k): array => [$k['key'], $k['store'], self::groupCell($k['group'], $k['package'])],
                         $keys,
                     ),
                 ];
@@ -85,5 +85,14 @@ final class ScanOutputFormatter
         }
 
         return $sections;
+    }
+
+    private static function groupCell(?string $group, ?string $package): string
+    {
+        if ($group === null) {
+            return '-';
+        }
+
+        return $package !== null ? "{$package}::{$group}" : $group;
     }
 }
