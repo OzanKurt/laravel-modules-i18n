@@ -162,7 +162,17 @@ final class ScanCommand extends Command
      */
     private function renderTables(array $result, array $categories): void
     {
-        foreach (ScanOutputFormatter::tableSections($result, $categories) as $section) {
+        $sections = ScanOutputFormatter::tableSections($result, $categories);
+
+        // A silent success and a command that never ran leave the same trace in
+        // a CI log. Only the table format says so: json has to stay parseable.
+        if ($sections === []) {
+            $this->line('No findings.');
+
+            return;
+        }
+
+        foreach ($sections as $section) {
             $this->newLine();
             $this->line($section['title']);
             $this->table($section['headers'], $section['rows']);

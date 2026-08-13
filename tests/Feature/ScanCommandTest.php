@@ -102,6 +102,31 @@ it('treats a whitespace-only --only as no --only at all', function () {
     $this->artisan('i18n:scan', ['--only' => ' ', '--fail' => true])->assertExitCode(0);
 });
 
+it('confirms a clean table run instead of printing nothing at all', function () {
+    // An empty buffer and exit 0 read, in a CI log, exactly like a command that
+    // never ran. The scan-dynamic tree with its own catalogue has nothing
+    // missing and no warning, so this is the genuinely clean case.
+    app()->instance(TranslationManager::class, i18n_manager(__DIR__.'/../Fixtures/scan-dynamic-lang'));
+    config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-dynamic']);
+
+    $this->artisan('i18n:scan --only=missing')
+        ->expectsOutputToContain('No findings')
+        ->assertExitCode(0);
+});
+
+it('keeps the clean-run confirmation out of the json payload', function () {
+    // json has one job: parse. A friendly line on stdout would break it.
+    app()->instance(TranslationManager::class, i18n_manager(__DIR__.'/../Fixtures/scan-dynamic-lang'));
+    config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-dynamic']);
+
+    $expected = app(ScanReport::class)->generate();
+
+    $exit = Artisan::call('i18n:scan', ['--only' => 'missing', '--format' => 'json']);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR))->toBe($expected);
+});
+
 it('rejects an unknown category', function () {
     $this->artisan('i18n:scan --only=missinng')
         ->expectsOutputToContain('missinng')
