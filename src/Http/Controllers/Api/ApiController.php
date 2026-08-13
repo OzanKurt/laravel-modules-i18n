@@ -39,16 +39,13 @@ abstract class ApiController extends CoreApiController
             return $manager->catalog()->locales;
         }
 
-        $locales = array_values(array_filter(
-            array_map('trim', explode(',', $raw)),
-            static fn (string $locale): bool => $locale !== '',
-        ));
+        $locales = LangPaths::parseLocaleList($raw);
 
         foreach ($locales as $locale) {
             abort_unless(LangPaths::isValidLocale($locale), 422, "Invalid locale [{$locale}].");
         }
 
-        return array_values(array_unique($locales));
+        return $locales;
     }
 
     /**
@@ -65,16 +62,13 @@ abstract class ApiController extends CoreApiController
             return null;
         }
 
-        $locales = array_values(array_filter(
-            array_map('trim', explode(',', $raw)),
-            static fn (string $locale): bool => $locale !== '',
-        ));
+        $locales = LangPaths::parseLocaleList($raw);
 
         foreach ($locales as $locale) {
             abort_unless(LangPaths::isValidLocale($locale), 422, "Invalid locale [{$locale}].");
         }
 
-        return array_values(array_unique($locales));
+        return $locales;
     }
 
     /**

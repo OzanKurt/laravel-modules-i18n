@@ -378,6 +378,60 @@ The full `scan` config block, with its defaults:
 The same report is available in PHP via `Kurt\Modules\I18n\Support\ScanReport::generate($locales =
 null)`, and the cache can be cleared directly with `Kurt\Modules\I18n\Support\ScanCache::flush()`.
 
+### The scan command
+
+`php artisan i18n:scan` runs the same scan from the CLI, so CI can gate on it without a web server or
+authentication (`enabled_environments` gates the HTTP endpoints, not this command, so it runs the same
+way under `testing` as anywhere else):
+
+```bash
+php artisan i18n:scan
+php artisan i18n:scan --only=missing --fail
+```
+
+Flags:
+
+- `--only` (comma-separated `missing`, `unused`, `dynamic`, `ambiguous`; default: all four) narrows
+  which tables are printed and which categories `--fail` gates on. It has **no effect on `--format=json`**:
+  the JSON output always emits the whole report, unchanged, so it stays identical to the `data` body of
+  `GET /api/i18n/report/scan`. The endpoint wraps its response in the `{ data, meta }` envelope; the CLI
+  prints the report itself, unwrapped. `--format=json --only=missing` still narrows the exit code, just
+  not what gets printed.
+- `--locales` (comma-separated, same convention as the endpoint's `locales` parameter) restricts which
+  locales `missing` is checked against. Omitted, it falls back to every locale on disk.
+- `--format` (`table` default, or `json`): `table` prints one section per requested category, plus a
+  `warnings` table when the scan produced any, and a short `No findings.` line when it produced
+  neither, so a clean run is never a silent one. `json` prints the full report as pretty-printed JSON
+  and nothing else, ready to pipe into a parser. Keys are printed verbatim in both formats: a key that
+  contains console markup (`Press <info>enter</info>`) is escaped for the terminal, never rewritten.
+- `--fail` makes the command exit non-zero when a gated category holds findings. It **ignores
+  `dynamic`** unless `dynamic` is explicitly named in `--only`, because dynamic call sites (`__($key)`)
+  are a legitimate pattern present in almost every codebase and would fail every project's first run.
+- `--refresh` flushes the scan cache before running, so every file is re-read instead of reusing a
+  cached result.
+
+Exit codes:
+
+- `0`: clean run (or `--fail` was not given).
+- `1`: `--fail` was given and a gated category holds findings.
+- `2`: the scan could not vouch for the whole walk, so a category was withheld. Two cases reach it:
+  some file failed to parse **and** `unused` was requested (a key used only in a file that failed would
+  look unused), or no literal translation call was found anywhere, which means misconfigured
+  `scan.paths` rather than a clean codebase. The second case ignores `--only` entirely, because a walk
+  that read nothing makes *every* category vacuous, `missing` included, and there is no selection that
+  could honestly pass. Neither case means "unused keys were found"; both mean the run cannot be trusted
+  enough to answer, and both win even when `--fail` would also have exited `1`. A bare
+  `php artisan i18n:scan` requests all four categories, so a single unparseable file is enough to exit
+  `2` on an otherwise informational run, with no `--fail` involved.
+- `64`: usage error: an unknown `--format`, an unknown `--only` category, or an `--only` that names no
+  category at all (e.g. `--only=,`).
+
+A copy-pasteable CI line:
+
+```bash
+php artisan i18n:scan --only=missing --fail
+```
+
 ## Import / export
 
 Export and import a locale's translations as flat `key,value` rows (nested PHP keys are dot-paths,

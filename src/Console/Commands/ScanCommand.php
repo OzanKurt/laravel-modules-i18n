@@ -1,0 +1,222 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Kurt\Modules\I18n\Console\Commands;
+
+use Illuminate\Console\Command;
+use Kurt\Modules\I18n\Support\LangPaths;
+use Kurt\Modules\I18n\Support\ScanCache;
+use Kurt\Modules\I18n\Support\ScanOutputFormatter;
+use Kurt\Modules\I18n\Support\ScanReport;
+use Symfony\Component\Console\Output\OutputInterface;
+
+/**
+ * Read-only report of how source code lines up with the translation files.
+ *
+ * Deliberately thin: every rule about what the categories mean, and when
+ * `unused` may be trusted, lives in ScanReport. This class only turns flags
+ * into a call, output into text, and outcomes into an exit code.
+ *
+ * It calls ScanReport directly rather than the HTTP endpoint, so a CI run needs
+ * no web server.
+ *
+ * @phpstan-import-type Report from ScanOutputFormatter
+ */
+final class ScanCommand extends Command
+{
+    private const EXIT_CLEAN = 0;
+
+    private const EXIT_FINDINGS = 1;
+
+    private const EXIT_INCOMPLETE = 2;
+
+    private const EXIT_USAGE = 64;
+
+    /** Categories --fail gates on when --only was not given. */
+    private const FAIL_BY_DEFAULT = ['missing', 'unused', 'ambiguous'];
+
+    /** Values --format accepts. */
+    private const FORMATS = ['table', 'json'];
+
+    protected $signature = 'i18n:scan
+        {--only= : Comma-separated categories (missing, unused, dynamic, ambiguous); narrows the tables and the exit code, never the JSON}
+        {--locales= : Comma-separated locales; narrows missing}
+        {--format=table : table or json}
+        {--fail : Exit non-zero when a selected category holds findings}
+        {--refresh : Bypass the scan cache}';
+
+    protected $description = 'Report translation keys used in code but missing from files, and keys stored but unused.';
+
+    public function handle(ScanReport $report, ScanCache $cache): int
+    {
+        // Whether --only was given is decided once, here, and handed on. Asking
+        // the question twice with two different emptiness tests is how "--only=' '"
+        // came to mean "every category" to the tables and "gate on all four,
+        // dynamic included" to --fail.
+        $onlyOption = $this->option('only');
+        $only = is_string($onlyOption) ? $onlyOption : '';
+        $onlyGiven = trim($only) !== '';
+
+        $categories = $this->categories($only, $onlyGiven);
+
+        if ($categories === null) {
+            return self::EXIT_USAGE;
+        }
+
+        $format = $this->option('format');
+
+        if (! in_array($format, self::FORMATS, true)) {
+            $this->error('Unknown format. Valid: '.implode(', ', self::FORMATS).'.');
+
+            return self::EXIT_USAGE;
+        }
+
+        $locales = $this->locales();
+
+        if ($locales === false) {
+            return self::EXIT_USAGE;
+        }
+
+        if ($this->option('refresh')) {
+            $cache->flush();
+        }
+
+        $result = $report->generate($locales);
+
+        if ($format === 'json') {
+            // Raw, because the payload has to reach the terminal exactly as it
+            // was encoded: line() hands it to Symfony's output formatter, which
+            // reads any markup inside a translation key as its own and either
+            // rewrites the key or, on a colour it cannot build, throws.
+            $this->output->writeln(ScanOutputFormatter::json($result), OutputInterface::OUTPUT_RAW);
+        } else {
+            $this->renderTables($result, $categories);
+        }
+
+        return $this->exitCode($result, $categories, $onlyGiven);
+    }
+
+    /**
+     * @return list<string>|null null signals a usage error, already reported
+     */
+    private function categories(string $only, bool $onlyGiven): ?array
+    {
+        if (! $onlyGiven) {
+            return ScanOutputFormatter::CATEGORIES;
+        }
+
+        $requested = array_values(array_filter(
+            array_map('trim', explode(',', $only)),
+            static fn (string $category): bool => $category !== '',
+        ));
+
+        // Separators alone ("--only=," or "--only=' , '") clear the empty-string
+        // guard but select nothing, which would leave every table unprinted and
+        // both non-zero exit codes unreachable. A gate that cannot fail is a
+        // usage error, not a silent pass.
+        if ($requested === []) {
+            $this->error('--only needs at least one category. Valid: '.implode(', ', ScanOutputFormatter::CATEGORIES).'.');
+
+            return null;
+        }
+
+        $unknown = array_diff($requested, ScanOutputFormatter::CATEGORIES);
+
+        if ($unknown !== []) {
+            $this->error('Unknown category: '.implode(', ', $unknown).'. Valid: '.implode(', ', ScanOutputFormatter::CATEGORIES).'.');
+
+            return null;
+        }
+
+        return $requested;
+    }
+
+    /**
+     * @return list<string>|null|false false signals a usage error, already reported
+     */
+    private function locales(): array|null|false
+    {
+        $raw = $this->option('locales');
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $locales = LangPaths::parseLocaleList($raw);
+
+        foreach ($locales as $locale) {
+            if (! LangPaths::isValidLocale($locale)) {
+                $this->error("Invalid locale [{$locale}].");
+
+                return false;
+            }
+        }
+
+        return $locales;
+    }
+
+    /**
+     * @param  Report  $result
+     * @param  list<string>  $categories
+     */
+    private function renderTables(array $result, array $categories): void
+    {
+        $sections = ScanOutputFormatter::tableSections($result, $categories);
+
+        // A silent success and a command that never ran leave the same trace in
+        // a CI log. Only the table format says so: json has to stay parseable.
+        if ($sections === []) {
+            $this->line('No findings.');
+
+            return;
+        }
+
+        foreach ($sections as $section) {
+            $this->newLine();
+            $this->line($section['title']);
+            $this->table($section['headers'], $section['rows']);
+        }
+    }
+
+    /**
+     * @param  Report  $result
+     * @param  list<string>  $categories
+     */
+    private function exitCode(array $result, array $categories, bool $onlyGiven): int
+    {
+        // Zero literal call sites is the strongest form of a scan that cannot
+        // vouch for its walk: it makes every category vacuous, not only
+        // `unused`, since `missing` came back empty because nothing was read
+        // rather than because nothing is missing. So unlike the rule below,
+        // --only cannot narrow this one away and leave a green gate behind.
+        // ScanReport decides the condition; this only reads its verdict.
+        if (in_array(ScanReport::NO_USAGES_WARNING, array_column($result['warnings'], 'reason'), true)) {
+            return self::EXIT_INCOMPLETE;
+        }
+
+        // An incomplete scan outranks a finding: the findings themselves came
+        // from a walk with known gaps, so blaming them would overstate the run.
+        if (in_array('unused', $categories, true) && $result['warnings'] !== []) {
+            return self::EXIT_INCOMPLETE;
+        }
+
+        if (! $this->option('fail')) {
+            return self::EXIT_CLEAN;
+        }
+
+        $gated = $onlyGiven ? $categories : self::FAIL_BY_DEFAULT;
+
+        foreach ($gated as $category) {
+            $found = $category === 'missing'
+                ? array_sum(array_map('count', $result['missing']))
+                : count($result[$category]);
+
+            if ($found > 0) {
+                return self::EXIT_FINDINGS;
+            }
+        }
+
+        return self::EXIT_CLEAN;
+    }
+}
