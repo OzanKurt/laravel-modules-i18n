@@ -28,6 +28,15 @@ it('validates locales', function (): void {
         ->and(LangPaths::isValidLocale(''))->toBeFalse();
 });
 
+it('parses a locale list into trimmed, unique, non-empty entries', function (): void {
+    // The one rule the ?locales= query parameter and the --locales flag share,
+    // so the CLI report and the endpoint report cannot drift apart.
+    expect(LangPaths::parseLocaleList('en, tr'))->toBe(['en', 'tr'])
+        ->and(LangPaths::parseLocaleList('en,en'))->toBe(['en'])
+        ->and(LangPaths::parseLocaleList('en, ,tr,'))->toBe(['en', 'tr'])
+        ->and(LangPaths::parseLocaleList(' , '))->toBe([]);
+});
+
 it('validates groups', function (): void {
     expect(LangPaths::isValidGroup('users'))->toBeTrue()
         ->and(LangPaths::isValidGroup('admin/users'))->toBeTrue()

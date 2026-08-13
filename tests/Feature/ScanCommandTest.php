@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Artisan;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
 beforeEach(function () {
@@ -35,6 +36,15 @@ it('prints missing but still exits 2 when unused is also requested', function ()
     $this->artisan('i18n:scan --only=missing,unused')->assertExitCode(2);
 });
 
+it('prefers exit 2 over exit 1 when the scan is incomplete and --fail has findings', function () {
+    // Both conditions are live: Broken.php makes the walk incomplete while the
+    // fixture tree has missing keys, so --fail alone would exit 1. The contract
+    // says the incomplete scan wins, because findings drawn from a walk with
+    // known gaps cannot be trusted enough to be blamed. Without --fail this
+    // would only distinguish 2 from 0, which is not the rule being pinned.
+    $this->artisan('i18n:scan --only=missing,unused --fail')->assertExitCode(2);
+});
+
 it('exits 0 with findings when --fail is absent', function () {
     withoutBrokenFixture();
 
@@ -60,12 +70,44 @@ it('does not fail on dynamic unless dynamic is asked for', function () {
     $this->artisan('i18n:scan --only=dynamic --fail')->assertExitCode(1);
 });
 
+it('treats a whitespace-only --only as no --only at all', function () {
+    // Same tree as the dynamic test above, where the sole finding is a dynamic
+    // call site. "--only=' '" is not a selection, so the --fail gate must be
+    // the default one that ignores dynamic, exactly as a bare --fail is.
+    app()->instance(TranslationManager::class, i18n_manager(__DIR__.'/../Fixtures/scan-dynamic-lang'));
+    config()->set('i18n.scan.paths', [__DIR__.'/../Fixtures/scan-dynamic']);
+
+    $this->artisan('i18n:scan', ['--only' => ' ', '--fail' => true])->assertExitCode(0);
+});
+
 it('rejects an unknown category', function () {
     $this->artisan('i18n:scan --only=missinng')
         ->expectsOutputToContain('missinng')
         ->assertExitCode(64);
 });
 
+it('rejects an --only that names no category at all', function () {
+    // Separators alone survive the empty-string guard but filter down to an
+    // empty selection, which would silence every table and both non-zero exit
+    // codes. A --fail that cannot fail is worse than no --fail.
+    $this->artisan('i18n:scan', ['--only' => ',', '--fail' => true])->assertExitCode(64);
+    $this->artisan('i18n:scan', ['--only' => ' , ', '--fail' => true])->assertExitCode(64);
+});
+
+it('rejects an unknown format', function () {
+    $this->artisan('i18n:scan --format=jsonn')->assertExitCode(64);
+});
+
 it('rejects a malformed locale', function () {
     $this->artisan('i18n:scan --locales=../etc')->assertExitCode(64);
+});
+
+it('deduplicates a repeated locale', function () {
+    // The endpoint's ?locales=en,en answers with a single "en"; the CLI must
+    // agree, since the JSON output is asserted to equal the endpoint's report.
+    $exit = Artisan::call('i18n:scan', ['--only' => 'missing', '--locales' => 'en,en', '--format' => 'json']);
+    $report = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($report['locales'])->toBe(['en']);
 });

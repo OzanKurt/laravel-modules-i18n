@@ -74,6 +74,24 @@ final class LangPaths
         return $locale !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $locale) === 1;
     }
 
+    /**
+     * Split a comma-separated locale list into trimmed, unique, non-empty
+     * entries, so `?locales=` and `--locales=` agree on what a list means.
+     *
+     * Validation is deliberately left to the caller: the HTTP layer aborts 422
+     * on a bad locale and the console layer reports a usage error, and only the
+     * parsing and deduplication are worth sharing.
+     *
+     * @return list<string>
+     */
+    public static function parseLocaleList(string $raw): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $locale): bool => $locale !== '',
+        )));
+    }
+
     public static function isValidGroup(string $group): bool
     {
         if ($group === '' || str_contains($group, '\\')) {

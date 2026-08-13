@@ -35,8 +35,11 @@ final class ScanCommand extends Command
     /** Categories --fail gates on when --only was not given. */
     private const FAIL_BY_DEFAULT = ['missing', 'unused', 'ambiguous'];
 
+    /** Values --format accepts. */
+    private const FORMATS = ['table', 'json'];
+
     protected $signature = 'i18n:scan
-        {--only= : Comma-separated categories: missing, unused, dynamic, ambiguous}
+        {--only= : Comma-separated categories (missing, unused, dynamic, ambiguous); narrows the tables and the exit code, never the JSON}
         {--locales= : Comma-separated locales; narrows missing}
         {--format=table : table or json}
         {--fail : Exit non-zero when a selected category holds findings}
@@ -46,9 +49,25 @@ final class ScanCommand extends Command
 
     public function handle(ScanReport $report, ScanCache $cache): int
     {
-        $categories = $this->categories();
+        // Whether --only was given is decided once, here, and handed on. Asking
+        // the question twice with two different emptiness tests is how "--only=' '"
+        // came to mean "every category" to the tables and "gate on all four,
+        // dynamic included" to --fail.
+        $onlyOption = $this->option('only');
+        $only = is_string($onlyOption) ? $onlyOption : '';
+        $onlyGiven = trim($only) !== '';
+
+        $categories = $this->categories($only, $onlyGiven);
 
         if ($categories === null) {
+            return self::EXIT_USAGE;
+        }
+
+        $format = $this->option('format');
+
+        if (! in_array($format, self::FORMATS, true)) {
+            $this->error('Unknown format. Valid: '.implode(', ', self::FORMATS).'.');
+
             return self::EXIT_USAGE;
         }
 
@@ -64,27 +83,39 @@ final class ScanCommand extends Command
 
         $result = $report->generate($locales);
 
-        if ($this->option('format') === 'json') {
+        if ($format === 'json') {
             $this->line(ScanOutputFormatter::json($result));
         } else {
             $this->renderTables($result, $categories);
         }
 
-        return $this->exitCode($result, $categories);
+        return $this->exitCode($result, $categories, $onlyGiven);
     }
 
     /**
      * @return list<string>|null null signals a usage error, already reported
      */
-    private function categories(): ?array
+    private function categories(string $only, bool $onlyGiven): ?array
     {
-        $only = $this->option('only');
-
-        if (! is_string($only) || trim($only) === '') {
+        if (! $onlyGiven) {
             return ScanOutputFormatter::CATEGORIES;
         }
 
-        $requested = array_values(array_filter(array_map('trim', explode(',', $only))));
+        $requested = array_values(array_filter(
+            array_map('trim', explode(',', $only)),
+            static fn (string $category): bool => $category !== '',
+        ));
+
+        // Separators alone ("--only=," or "--only=' , '") clear the empty-string
+        // guard but select nothing, which would leave every table unprinted and
+        // both non-zero exit codes unreachable. A gate that cannot fail is a
+        // usage error, not a silent pass.
+        if ($requested === []) {
+            $this->error('--only needs at least one category. Valid: '.implode(', ', ScanOutputFormatter::CATEGORIES).'.');
+
+            return null;
+        }
+
         $unknown = array_diff($requested, ScanOutputFormatter::CATEGORIES);
 
         if ($unknown !== []) {
@@ -107,7 +138,7 @@ final class ScanCommand extends Command
             return null;
         }
 
-        $locales = array_values(array_filter(array_map('trim', explode(',', $raw))));
+        $locales = LangPaths::parseLocaleList($raw);
 
         foreach ($locales as $locale) {
             if (! LangPaths::isValidLocale($locale)) {
@@ -146,7 +177,7 @@ final class ScanCommand extends Command
      * @param  Report  $result
      * @param  list<string>  $categories
      */
-    private function exitCode(array $result, array $categories): int
+    private function exitCode(array $result, array $categories, bool $onlyGiven): int
     {
         // An incomplete scan outranks a finding: the findings themselves came
         // from a walk with known gaps, so blaming them would overstate the run.
@@ -158,9 +189,7 @@ final class ScanCommand extends Command
             return self::EXIT_CLEAN;
         }
 
-        $gated = $this->option('only') === null || $this->option('only') === ''
-            ? self::FAIL_BY_DEFAULT
-            : $categories;
+        $gated = $onlyGiven ? $categories : self::FAIL_BY_DEFAULT;
 
         foreach ($gated as $category) {
             $found = $category === 'missing'
